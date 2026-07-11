@@ -1,0 +1,6 @@
+{
+  "name": "Baybayin Translator",
+  "description": "An advanced orthographic translator engine for converting Latin text into traditional and modern Baybayin script in real time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

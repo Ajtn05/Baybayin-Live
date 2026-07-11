@@ -1168,12 +1168,12 @@ function AboutTab() {
     <div className="space-y-6">
       <section className="border border-line bg-paper p-6 sm:p-8">
         <h2 className="font-serif text-2xl font-normal">How Baybayin Live works</h2>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-gray">
+        <p className="mt-3 max-w-full text-sm leading-6 text-gray">
           Baybayin Live is fully deterministic. Every rule that fires is inspectable word by word on the Details tab. Instead of spelling out English words
           letter by letter, they are converted the way Filipino usually borrows English words in practice by
           pronunciation first. These new 'sound-first' words are then respelled into sounds Baybayin can write.
         </p>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-gray">
+        <p className="mt-3 max-w-full text-sm leading-6 text-gray">
           In full honestly, this was made after reading a twitter thread on Baybayin use that included a very incorrect usage. I noticed
           this came as a result of attempting to write English using Baybayin and so I thought it would be good if we could have a standardized
           way of making use of Baybayin in the modern age. Before anyone says "errr imperial manila smh, baybayin is tagalog-centric..." yes that
@@ -1182,7 +1182,7 @@ function AboutTab() {
           but before any of that, let's figure out how to properly adapt an Abugida script into daily use (especcially with our taglish/english tendencies),
           using the most-well known script of the country, and then we can make moves to do the same for other scripts.
         </p>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-gray">
+        <p className="mt-3 max-w-full text-sm leading-6 text-gray">
           In the mean time, we have this. The goal is for people to test it out, see what works best, inform me if any words are converted incorrectly, or if there are 
           any actual experts in Filipino (PLEASE) who can help out with conversion rules, that would be great. Alsooo, name suggstions? Baybayin Live kinda basic im ngl.
           Read more below to see what processes I felt worked best for transliteration, feel free to let me know I'm wrong because I kinda balled it. I'm open to the idea 

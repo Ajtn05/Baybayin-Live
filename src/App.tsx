@@ -13,7 +13,6 @@ import {
   DICTIONARY,
   KUDLIT_ABOVE,
   KUDLIT_BELOW,
-  PRESET_EXAMPLES,
   VIRAMA_UNICODE,
   analyzeWordGlyphs,
   syllabifyWord,
@@ -28,16 +27,16 @@ import {
   analyzeEnglishWord,
 } from './baybayinPhonetic';
 import { CmuDictStatus, cmuDictSize, loadCmuDict } from './cmudict';
-import { Consideration } from './types';
+import { detectWordLanguage, stripAccents } from './languageDetect';
+import { SpanishWordAnalysis, analyzeSpanishWord } from './spanishRespeller';
+import { Consideration, WordGlyphAnalysis, WordLang } from './types';
 
-type Tab = 'translate' | 'details' | 'chart' | 'history' | 'about';
-type Mode = 'filipino' | 'english';
+type Tab = 'translate' | 'display' | 'details' | 'chart' | 'history' | 'about';
 
 interface HistoryItem {
   id: string;
   input: string;
   output: string;
-  mode: Mode;
   createdAt: string;
 }
 
@@ -54,9 +53,10 @@ const SOURCE_LABELS: Record<PronunciationSource, string> = {
   spelled: 'as spelled',
 };
 
-const modeLabels: Record<Mode, string> = {
+const LANG_LABELS: Record<WordLang, string> = {
   filipino: 'Filipino',
   english: 'English',
+  spanish: 'Spanish',
 };
 
 // Per-word reading choices, keyed by the word's letters:
@@ -64,9 +64,11 @@ const modeLabels: Record<Mode, string> = {
 type Readings = Record<string, string>;
 // Per-word, per-syllable manual vowel choices (ARPAbet vowel per index).
 type NucleusEdits = Record<string, Record<number, string>>;
+// Per-word manual language choice, outranking auto-detection.
+type LangOverrides = Record<string, WordLang>;
 
 function readingKey(word: string): string {
-  return word.toLowerCase().replace(/[^a-z]/g, '');
+  return stripAccents(word.toLowerCase()).replace(/ñ/g, 'n').replace(/[^a-z]/g, '');
 }
 
 function parseReading(value?: string): WordReading | undefined {
@@ -83,46 +85,72 @@ function composeReading(readings: Readings, edits: NucleusEdits, word: string): 
   return { ...base, nucleusOverrides };
 }
 
-function splitEnglishInput(text: string) {
-  return text.match(/[A-Za-z']+|[^A-Za-z']+/g) ?? [];
+// Word tokens include accented letters and ñ so Spanish input
+// ("corazón", "niño") stays whole.
+const WORD_CHAR = /[A-Za-zÀ-ɏ]/;
+
+function splitInput(text: string) {
+  return text.match(/[A-Za-zÀ-ɏ']+|[^A-Za-zÀ-ɏ']+/g) ?? [];
 }
 
-function buildEnglishBridge(text: string, readings: Readings, edits: NucleusEdits) {
-  const words: EnglishWordAnalysis[] = [];
-  const mappedText = splitEnglishInput(text)
+/** One input word routed through its detected (or overridden) pipeline. */
+interface BridgeWord {
+  original: string;
+  /** Language the word is actually routed through. */
+  lang: WordLang;
+  /** What auto-detection said, regardless of any override. */
+  autoLang: WordLang;
+  reason: string;
+  overridden: boolean;
+  /** Baybayin-safe respelling fed to the renderer. */
+  latin: string;
+  english?: EnglishWordAnalysis;
+  spanish?: SpanishWordAnalysis;
+}
+
+function analyzeBridgeWord(token: string, readings: Readings, edits: NucleusEdits, langOverrides: LangOverrides): BridgeWord {
+  const detection = detectWordLanguage(token);
+  const override = langOverrides[readingKey(token)];
+  const lang = override ?? detection.lang;
+  const base = {
+    original: token,
+    lang,
+    autoLang: detection.lang,
+    reason: override
+      ? `Language set to ${LANG_LABELS[override]} manually — auto-detection said ${LANG_LABELS[detection.lang]}.`
+      : detection.reason,
+    overridden: Boolean(override),
+  };
+
+  if (lang === 'english') {
+    const analysis = analyzeEnglishWord(token, composeReading(readings, edits, token));
+    return { ...base, latin: analysis.latin, english: analysis };
+  }
+  if (lang === 'spanish') {
+    const analysis = analyzeSpanishWord(token);
+    return { ...base, latin: analysis.latin, spanish: analysis };
+  }
+  // Filipino needs no bridge — the engine's own preprocessing
+  // (loan letters, KWF glide spelling) handles it downstream.
+  return { ...base, latin: stripAccents(token).replace(/ñ/gi, 'ny') };
+}
+
+function buildBridge(text: string, readings: Readings, edits: NucleusEdits, langOverrides: LangOverrides) {
+  const words: BridgeWord[] = [];
+  const mappedText = splitInput(text)
     .map(token => {
-      if (!/[A-Za-z]/.test(token)) return token;
-      const analysis = analyzeEnglishWord(token, composeReading(readings, edits, token));
-      words.push(analysis);
-      return analysis.latin;
+      if (!WORD_CHAR.test(token)) return token;
+      const word = analyzeBridgeWord(token, readings, edits, langOverrides);
+      words.push(word);
+      return word.latin;
     })
     .join('');
 
   return { mappedText, words };
 }
 
-function getFilipinoOncRows(text: string, useDictionary: boolean) {
-  return text
-    .toLowerCase()
-    .split(/(\s+)/)
-    .flatMap(token => {
-      if (!token.trim()) return [];
-      const normalized = useDictionary && DICTIONARY[token] ? DICTIONARY[token].standard : token;
-      return syllabifyWord(normalized)
-        .filter(item => item.type === 'syllable')
-        .map(item => ({
-          source: item.original,
-          onset: item.onset || '-',
-          nucleus: item.nucleus || '-',
-          coda: item.coda || '-',
-          latin: item.original,
-        }));
-    });
-}
-
 export default function App() {
-  const [mode, setMode] = useState<Mode>('english');
-  const [inputText, setInputText] = useState('psychology, computer, doctor');
+  const [inputText, setInputText] = useState('kumusta, computer, corazón');
   const [activeTab, setActiveTab] = useState<Tab>('translate');
   const [useRa, setUseRa] = useState(true);
   const [nativePunctuation, setNativePunctuation] = useState(true);
@@ -134,6 +162,17 @@ export default function App() {
   const [cmuStatus, setCmuStatus] = useState<CmuDictStatus>('loading');
   const [readings, setReadings] = useState<Readings>({});
   const [nucleusEdits, setNucleusEdits] = useState<NucleusEdits>({});
+  const [langOverrides, setLangOverrides] = useState<LangOverrides>({});
+
+  const chooseLang = (word: string, lang: WordLang, autoLang: WordLang) =>
+    setLangOverrides(current => {
+      const key = readingKey(word);
+      const next = { ...current };
+      // Picking the auto-detected language again clears the override.
+      if (lang === autoLang) delete next[key];
+      else next[key] = lang;
+      return next;
+    });
 
   const chooseReading = (word: string, value: string) => {
     setReadings(current => ({ ...current, [readingKey(word)]: value }));
@@ -171,25 +210,29 @@ export default function App() {
     }
   }, []);
 
-  // cmuStatus is a dependency so English analyses re-run once the CMU
-  // Pronouncing Dictionary finishes loading.
-  const englishBridge = useMemo(() => buildEnglishBridge(inputText, readings, nucleusEdits), [inputText, cmuStatus, readings, nucleusEdits]);
-  const sourceText = mode === 'english' ? englishBridge.mappedText : inputText;
+  // cmuStatus is a dependency so detection and English analyses re-run
+  // once the CMU Pronouncing Dictionary finishes loading.
+  const bridge = useMemo(
+    () => buildBridge(inputText, readings, nucleusEdits, langOverrides),
+    [inputText, cmuStatus, readings, nucleusEdits, langOverrides],
+  );
+  const sourceText = bridge.mappedText;
 
   const translationResult = useMemo(() => {
     const result = translateLatinToBaybayin(sourceText, {
       useRa,
       nativePunctuation,
-      useDictionary: mode === 'filipino' && useDictionary,
+      useDictionary,
       dropFinalConsonants,
       viramaChar: VIRAMA_UNICODE,
     });
 
-    if (mode === 'english' && inputText.trim()) {
+    const detected = bridge.words.filter(w => w.lang !== 'filipino');
+    if (detected.length > 0 && inputText.trim()) {
       return {
         ...result,
         notes: [
-          'English mode syllabifies the pronunciation into onset–nucleus–coda syllables before Baybayin rendering.',
+          `Each word's language is detected automatically (${bridge.words.map(w => `${w.original}: ${LANG_LABELS[w.lang]}`).join(', ')}) — English and Spanish words are respelled into a Baybayin-safe Latin bridge first.`,
           `Baybayin-safe Latin bridge: ${sourceText || 'none'}`,
           ...result.notes,
         ],
@@ -197,35 +240,48 @@ export default function App() {
     }
 
     return result;
-  }, [dropFinalConsonants, inputText, mode, nativePunctuation, sourceText, useDictionary, useRa]);
+  }, [bridge.words, dropFinalConsonants, inputText, nativePunctuation, sourceText, useDictionary, useRa]);
 
-  const oncRows = useMemo(() => {
-    if (mode === 'english') {
-      return englishBridge.words.flatMap(word =>
-        word.syllables.map(s => ({
+  const oncRows = useMemo(
+    () =>
+      bridge.words.flatMap(word => {
+        if (word.english) {
+          return word.english.syllables.map(s => ({
+            source: word.original,
+            onset: s.onset || '-',
+            nucleus: s.nucleus || '-',
+            coda: s.coda || '-',
+            latin: s.latin,
+          }));
+        }
+        const lower = word.latin.toLowerCase();
+        const normalized = useDictionary && DICTIONARY[lower] ? DICTIONARY[lower].standard : lower;
+        const syllables = word.spanish
+          ? word.spanish.syllables
+          : syllabifyWord(normalized).flatMap(s =>
+              s.type === 'syllable' ? [{ onset: s.onset, nucleus: s.nucleus, coda: s.coda, latin: s.original }] : [],
+            );
+        return syllables.map(s => ({
           source: word.original,
           onset: s.onset || '-',
           nucleus: s.nucleus || '-',
           coda: s.coda || '-',
           latin: s.latin,
-        })),
-      );
-    }
-
-    return getFilipinoOncRows(inputText, useDictionary);
-  }, [englishBridge.words, inputText, mode, useDictionary]);
+        }));
+      }),
+    [bridge.words, useDictionary],
+  );
 
   useEffect(() => {
     if (!inputText.trim() || !translationResult.text.trim()) return;
     const timer = window.setTimeout(() => {
       setHistory(current => {
-        if (current[0]?.input === inputText && current[0]?.mode === mode) return current;
+        if (current[0]?.input === inputText) return current;
         const next = [
           {
             id: crypto.randomUUID(),
             input: inputText.trim(),
             output: translationResult.text,
-            mode,
             createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
           ...current,
@@ -236,12 +292,7 @@ export default function App() {
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [inputText, mode, translationResult.text]);
-
-  const switchMode = (nextMode: Mode) => {
-    setMode(nextMode);
-    setInputText(nextMode === 'english' ? 'psychology, computer, doctor' : 'mabuhay, salamat, kaibigan');
-  };
+  }, [inputText, translationResult.text]);
 
   const copyOutput = async () => {
     await navigator.clipboard.writeText(translationResult.text);
@@ -284,7 +335,7 @@ export default function App() {
           </div>
 
           <nav className="flex flex-wrap items-baseline gap-x-6 gap-y-2">
-            {(['translate', 'details', 'chart', 'history', 'about'] as Tab[]).map(tab => (
+            {(['translate', 'display', 'details', 'chart', 'history', 'about'] as Tab[]).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
@@ -306,21 +357,9 @@ export default function App() {
               <div className="grid lg:grid-cols-2">
                 <div className="flex min-w-0 flex-col p-5 sm:p-6">
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-baseline gap-3">
-                      {(['english', 'filipino'] as Mode[]).map((item, index) => (
-                        <React.Fragment key={item}>
-                          {index > 0 && <span className="text-xs text-line">/</span>}
-                          <button
-                            onClick={() => switchMode(item)}
-                            className={`pb-1 text-[11px] font-normal uppercase tracking-[0.3em] transition ${
-                              mode === item ? 'border-b border-ink text-ink' : 'border-b border-transparent text-gray hover:text-ink'
-                            }`}
-                          >
-                            {modeLabels[item]}
-                          </button>
-                        </React.Fragment>
-                      ))}
-                    </div>
+                    <span className="pb-1 text-[11px] font-normal uppercase tracking-[0.3em] text-gray">
+                      Filipino / English / Spanish — detected per word
+                    </span>
                     <button
                       onClick={() => setInputText('')}
                       className="inline-flex items-center gap-1.5 text-[11px] font-normal uppercase tracking-[0.3em] text-gray transition hover:text-ink"
@@ -334,19 +373,17 @@ export default function App() {
                     value={inputText}
                     onChange={event => setInputText(event.target.value)}
                     spellCheck={false}
-                    placeholder={mode === 'english' ? 'Type English words, names, or loanwords…' : 'Type Filipino text…'}
+                    placeholder="Type Filipino, English, or Spanish — mix freely…"
                     className="min-h-52 w-full min-w-0 grow resize-none bg-transparent text-lg leading-8 text-ink outline-none placeholder:text-gray/60"
                   />
 
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-3 text-xs text-gray">
                     <span>{inputText.length} characters</span>
-                    {mode === 'english' && (
-                      <span>
-                        {cmuStatus === 'ready' && `CMU dictionary · ${cmuDictSize().toLocaleString()} words`}
-                        {cmuStatus === 'loading' && 'Loading CMU dictionary…'}
-                        {cmuStatus === 'error' && 'CMU dictionary unavailable — rule-based fallback'}
-                      </span>
-                    )}
+                    <span>
+                      {cmuStatus === 'ready' && `CMU dictionary · ${cmuDictSize().toLocaleString()} words`}
+                      {cmuStatus === 'loading' && 'Loading CMU dictionary…'}
+                      {cmuStatus === 'error' && 'CMU dictionary unavailable — rule-based fallback'}
+                    </span>
                   </div>
                 </div>
 
@@ -400,10 +437,16 @@ export default function App() {
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="mr-1 text-[11px] font-normal uppercase tracking-[0.3em] text-gray">Try</span>
-              {(mode === 'english'
-                ? ['linguistics', 'psychology', 'christian', 'michael', 'philippines', 'colourless green ideas']
-                : PRESET_EXAMPLES.map(item => item.latin)
-              ).map(example => (
+              {[
+                'mabuhay',
+                'psychology',
+                'corazón',
+                'kwento',
+                'hacienda',
+                'mag-aral',
+                'banyo',
+                'salamat sa lahat, my friend',
+              ].map(example => (
                 <button
                   key={example}
                   onClick={() => setInputText(example)}
@@ -422,34 +465,33 @@ export default function App() {
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <Toggle label="Modern Ra" detail="Use ᜍ for R instead of traditional Da/Ra sharing." checked={useRa} onChange={setUseRa} />
                 <Toggle label="Native punctuation" detail="Map commas and periods to ᜵ and ᜶." checked={nativePunctuation} onChange={setNativePunctuation} />
-                <Toggle label="Dictionary cleanup" detail="Normalize known Filipino forms in Filipino mode." checked={useDictionary} onChange={setUseDictionary} disabled={mode === 'english'} />
+                <Toggle label="Dictionary cleanup" detail="Normalize known Filipino forms before rendering." checked={useDictionary} onChange={setUseDictionary} />
                 <Toggle label="Drop final codas" detail="Use pre-colonial-style omitted final consonants." checked={dropFinalConsonants} onChange={setDropFinalConsonants} />
               </div>
             </section>
 
             <div className="grid items-start gap-6 lg:grid-cols-2">
-              {mode === 'english' && (
-                <section className="min-w-0 border border-line bg-paper p-5">
-                  <h2 className="mb-4 text-[11px] font-normal uppercase tracking-[0.3em] text-gray">English Bridge</h2>
-                  <div className="space-y-3">
-                    {englishBridge.words.length === 0 && (
-                      <p className="text-sm text-gray">Type an English word to see how it is respelled.</p>
-                    )}
-                    {englishBridge.words.map((word, index) => (
-                      <BridgeWordCard
-                        key={`${word.original}-${index}`}
-                        word={word}
-                        reading={readings[readingKey(word.original)] ?? 'cmu:0'}
-                        edits={nucleusEdits[readingKey(word.original)] ?? {}}
-                        onChooseReading={value => chooseReading(word.original, value)}
-                        onEditNucleus={(syllableIndex, vowel) => editNucleus(word.original, syllableIndex, vowel)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              )}
+              <section className="min-w-0 border border-line bg-paper p-5">
+                <h2 className="mb-4 text-[11px] font-normal uppercase tracking-[0.3em] text-gray">Word Bridge</h2>
+                <div className="space-y-3">
+                  {bridge.words.length === 0 && (
+                    <p className="text-sm text-gray">Type a word to see its detected language and respelling.</p>
+                  )}
+                  {bridge.words.map((word, index) => (
+                    <BridgeWordCard
+                      key={`${word.original}-${index}`}
+                      word={word}
+                      reading={readings[readingKey(word.original)] ?? 'cmu:0'}
+                      edits={nucleusEdits[readingKey(word.original)] ?? {}}
+                      onChooseLang={lang => chooseLang(word.original, lang, word.autoLang)}
+                      onChooseReading={value => chooseReading(word.original, value)}
+                      onEditNucleus={(syllableIndex, vowel) => editNucleus(word.original, syllableIndex, vowel)}
+                    />
+                  ))}
+                </div>
+              </section>
 
-              <div className={mode === 'english' ? 'min-w-0' : 'min-w-0 lg:col-span-2'}>
+              <div className="min-w-0">
                 <TracePanel
                   rows={oncRows}
                   notes={translationResult.notes}
@@ -461,14 +503,26 @@ export default function App() {
           </div>
         )}
 
+        {activeTab === 'display' && (
+          <DisplayTab
+            inputText={inputText}
+            settings={{ useRa, dropFinalConsonants, useDictionary }}
+            nativePunctuation={nativePunctuation}
+            cmuStatus={cmuStatus}
+            readings={readings}
+            nucleusEdits={nucleusEdits}
+            langOverrides={langOverrides}
+          />
+        )}
+
         {activeTab === 'details' && (
           <DetailsTab
-            mode={mode}
             inputText={inputText}
             settings={{ useRa, dropFinalConsonants, useDictionary }}
             cmuStatus={cmuStatus}
             readings={readings}
             nucleusEdits={nucleusEdits}
+            langOverrides={langOverrides}
             onShowAbout={() => setActiveTab('about')}
           />
         )}
@@ -492,14 +546,12 @@ export default function App() {
                 <button
                   key={item.id}
                   onClick={() => {
-                    setMode(item.mode);
                     setInputText(item.input);
                     setActiveTab('translate');
                   }}
                   className="border border-line bg-paper p-4 text-left transition hover:border-ink hover:bg-ghost"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray">
-                    <span>{modeLabels[item.mode]}</span>
+                  <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-gray">
                     <span>{item.createdAt}</span>
                   </div>
                   <div className="mt-2 font-semibold">{item.input}</div>
@@ -574,25 +626,62 @@ function ReadingSwitch({
 }
 
 /**
- * One English Bridge card: the word, its respelling, the reading switch,
- * and a per-syllable vowel editor grounded in the short/long vowel
- * classes the syllabifier itself uses.
+ * Per-word language switch: the auto-detected language is tagged
+ * "auto"; clicking another language overrides detection for every
+ * occurrence of the word, and clicking the auto one restores it.
+ */
+function LangSwitch({ word, onChange }: { word: BridgeWord; onChange: (lang: WordLang) => void }) {
+  return (
+    <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line pt-2.5">
+      <span className="text-[10px] uppercase tracking-[0.2em] text-gray/70">Language</span>
+      {(['filipino', 'english', 'spanish'] as WordLang[]).map((lang, index) => (
+        <React.Fragment key={lang}>
+          {index > 0 && <span className="text-xs text-line">/</span>}
+          <button
+            onClick={() => onChange(lang)}
+            title={lang === word.lang ? word.reason : `Read "${word.original}" as ${LANG_LABELS[lang]}`}
+            className={`pb-0.5 text-xs transition ${
+              word.lang === lang ? 'border-b border-ink text-ink' : 'border-b border-transparent text-gray hover:text-ink'
+            }`}
+          >
+            {LANG_LABELS[lang]}
+            {lang === word.autoLang && (
+              <span className="ml-1.5 font-sans text-[9px] uppercase tracking-[0.15em] text-gray/70">auto</span>
+            )}
+          </button>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * One Word Bridge card: the word, its detected language, its
+ * respelling, and — for English — the reading switch plus a
+ * per-syllable vowel editor; for Spanish, the KWF rules that fired.
  */
 function BridgeWordCard({
   word,
   reading,
   edits,
+  onChooseLang,
   onChooseReading,
   onEditNucleus,
 }: {
-  word: EnglishWordAnalysis;
+  word: BridgeWord;
   reading: string;
   edits: Record<number, string>;
+  onChooseLang: (lang: WordLang) => void;
   onChooseReading: (value: string) => void;
   onEditNucleus: (syllableIndex: number, vowel: string | null) => void;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
-  const editable = word.source !== 'spelled';
+  const english = word.english;
+  const spanishRules = word.spanish?.considerations.filter(c => c.stage === 'map') ?? [];
+  const adaptedCount = english
+    ? english.considerations.filter(c => c.stage === 'map').length
+    : spanishRules.length;
+  const editable = english !== undefined && english.source !== 'spelled';
   const selectedEdit = selected !== null ? edits[selected] : undefined;
 
   return (
@@ -602,20 +691,52 @@ function BridgeWordCard({
         <ArrowRight className="h-4 w-4 text-gray/60" />
         <span className="font-mono font-semibold text-ink">{word.latin}</span>
         <span className="ml-auto flex items-center gap-1.5">
-          <AdaptedBadge count={word.considerations.filter(c => c.stage === 'map').length} />
-          <span className="bg-ghost px-2.5 py-1 text-[10px] font-normal uppercase tracking-[0.2em] text-gray">{SOURCE_LABELS[word.source]}</span>
+          <AdaptedBadge count={adaptedCount} />
+          {english && (
+            <span className="bg-ghost px-2.5 py-1 text-[10px] font-normal uppercase tracking-[0.2em] text-gray">{SOURCE_LABELS[english.source]}</span>
+          )}
+          {word.spanish && (
+            <span className="bg-ghost px-2.5 py-1 text-[10px] font-normal uppercase tracking-[0.2em] text-gray">
+              {word.spanish.source === 'curated' ? 'old loan' : 'KWF rules'}
+            </span>
+          )}
         </span>
       </div>
-      {word.source !== 'spelled' && (
-        <p className="mt-2 break-words font-mono text-xs text-gray">{word.arpabet || 'No phoneme parse'}</p>
+      {english && english.source !== 'spelled' && (
+        <p className="mt-2 break-words font-mono text-xs text-gray">{english.arpabet || 'No phoneme parse'}</p>
+      )}
+      <p className="mt-2 text-xs leading-5 text-gray">{word.reason}</p>
+
+      <LangSwitch word={word} onChange={lang => { setSelected(null); onChooseLang(lang); }} />
+
+      {english && (
+        <ReadingSwitch word={english} value={reading} onChange={value => { setSelected(null); onChooseReading(value); }} />
       )}
 
-      <ReadingSwitch word={word} value={reading} onChange={value => { setSelected(null); onChooseReading(value); }} />
+      {word.spanish && spanishRules.length > 0 && (
+        <div className="mt-2.5 border-t border-line pt-2.5">
+          <span className="text-[10px] uppercase tracking-[0.2em] text-gray/70">KWF respelling rules</span>
+          <ul className="mt-1.5 space-y-1">
+            {spanishRules.map((rule, index) => (
+              <li key={index} className="flex gap-2 text-xs leading-5 text-gray">
+                <span className="shrink-0 font-bold text-ink">≈</span>
+                <span>{rule.detail}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
-      {editable && word.syllables.length > 0 && (
+      {word.lang === 'filipino' && (
+        <p className="mt-2.5 border-t border-line pt-2.5 text-xs leading-5 text-gray">
+          Filipino already fits Baybayin's sound system — the engine applies the KWF glide spelling (kuwento, siya) directly. Details on the Details tab.
+        </p>
+      )}
+
+      {english && editable && english.syllables.length > 0 && (
         <div className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line pt-2.5">
           <span className="text-[10px] uppercase tracking-[0.2em] text-gray/70">Syllables</span>
-          {word.syllables.map((syllable, index) => (
+          {english.syllables.map((syllable, index) => (
             <button
               key={index}
               onClick={() => setSelected(selected === index ? null : index)}
@@ -634,7 +755,7 @@ function BridgeWordCard({
         </div>
       )}
 
-      {editable && selected !== null && (
+      {english && editable && selected !== null && (
         <div className="mt-2 space-y-1.5 bg-ghost p-2.5">
           {(['short', 'long'] as const).map(kind => (
             <div key={kind} className="flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
@@ -779,6 +900,142 @@ function TracePanel({
   );
 }
 
+// ─── Display tab: the whole text as an interlinear specimen ───
+
+type DisplayItem =
+  | { type: 'word'; word: BridgeWord; glyphs: WordGlyphAnalysis }
+  | { type: 'mark'; text: string }
+  | { type: 'break' };
+
+function DisplayTab({
+  inputText,
+  settings,
+  nativePunctuation,
+  cmuStatus,
+  readings,
+  nucleusEdits,
+  langOverrides,
+}: {
+  inputText: string;
+  settings: EngineSettings;
+  nativePunctuation: boolean;
+  cmuStatus: CmuDictStatus;
+  readings: Readings;
+  nucleusEdits: NucleusEdits;
+  langOverrides: LangOverrides;
+}) {
+  const [scale, setScale] = useState(48);
+
+  // cmuStatus is a dependency so English words re-analyze once the
+  // CMU Pronouncing Dictionary finishes loading.
+  const items = useMemo<DisplayItem[]>(
+    () =>
+      splitInput(inputText).flatMap<DisplayItem>(token => {
+        if (WORD_CHAR.test(token)) {
+          const word = analyzeBridgeWord(token, readings, nucleusEdits, langOverrides);
+          const glyphs = analyzeWordGlyphs(word.latin, {
+            useRa: settings.useRa,
+            dropFinalConsonants: settings.dropFinalConsonants,
+            useDictionary: word.lang === 'filipino' && settings.useDictionary,
+            viramaChar: VIRAMA_UNICODE,
+          });
+          return [{ type: 'word' as const, word, glyphs }];
+        }
+        const result: DisplayItem[] = [];
+        const marks = token.replace(/\s+/g, '');
+        if (marks) result.push({ type: 'mark', text: marks });
+        if (token.includes('\n')) result.push({ type: 'break' });
+        return result;
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [inputText, settings, cmuStatus, readings, nucleusEdits, langOverrides],
+  );
+
+  const wordCount = items.filter(item => item.type === 'word').length;
+
+  if (wordCount === 0) {
+    return (
+      <section className="border border-line bg-paper p-10 text-center text-sm text-gray">
+        Type something in the Translate tab to see it laid out word by word here.
+      </section>
+    );
+  }
+
+  return (
+    <section className="border border-line bg-paper">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-8">
+        <h2 className="text-[11px] font-normal uppercase tracking-[0.3em] text-gray">Interlinear Display</h2>
+        <label className="flex items-center gap-2 text-xs text-gray">
+          Size
+          <input
+            type="range"
+            min="34"
+            max="80"
+            value={scale}
+            onChange={event => setScale(Number(event.target.value))}
+            className="h-1 w-24 accent-ink"
+          />
+        </label>
+      </div>
+
+      <div className="px-5 py-10 sm:px-8 sm:py-14">
+        <div className="flex flex-wrap items-end gap-x-8 gap-y-12 sm:gap-x-12">
+          {items.map((item, index) => {
+            if (item.type === 'break') return <div key={index} className="h-0 basis-full" />;
+            if (item.type === 'mark') {
+              const text = nativePunctuation
+                ? item.text.replace(/[.!?]/g, '᜶').replace(/[,;:]/g, '᜵')
+                : item.text;
+              return (
+                <span key={index} className="-ml-5 font-baybayin leading-none text-gray sm:-ml-8" style={{ fontSize: scale * 0.72 }}>
+                  {text}
+                </span>
+              );
+            }
+            return <WordSpecimen key={index} word={item.word} glyphs={item.glyphs} scale={scale} />;
+          })}
+        </div>
+      </div>
+
+      <div className="border-t border-line px-5 py-3 sm:px-8">
+        <p className="text-[11px] leading-5 text-gray">
+          Each word reads top down: the input as typed, its Baybayin-safe Latin bridge, then every syllable above the glyphs
+          that write it — so the bottom line is the full Baybayin output. Bridges that changed from the original spelling are
+          shown in full ink.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/** One word of the interlinear specimen: input, bridge, syllable-over-glyph columns. */
+function WordSpecimen({ word, glyphs, scale }: { word: BridgeWord; glyphs: WordGlyphAnalysis; scale: number }) {
+  const bridged = glyphs.processed;
+  const changed = bridged !== word.original.toLowerCase();
+
+  return (
+    <div className="flex flex-col" title={`${LANG_LABELS[word.lang]} — ${word.reason}`}>
+      <span className="font-serif text-base leading-tight text-ink">{word.original}</span>
+      <span className={`mt-1 font-mono text-xs leading-tight ${changed ? 'font-semibold text-ink' : 'text-gray/60'}`}>
+        {bridged}
+      </span>
+      <div className="mt-3.5 flex items-end">
+        {glyphs.syllables.map((syllable, index) => (
+          <div
+            key={index}
+            className={`flex flex-col items-center gap-2 px-2 first:pl-0 last:pr-0 ${index > 0 ? 'border-l border-line' : ''}`}
+          >
+            <span className="font-mono text-[11px] text-gray">{syllable.latin || '·'}</span>
+            <span className="font-baybayin leading-none text-ink" style={{ fontSize: scale }}>
+              {syllable.script}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ChartTab({ useRa }: { useRa: boolean }) {
   const [selected, setSelected] = useState(BAYBAYIN_CHART_DATA[3]);
   const [mark, setMark] = useState<'a' | 'i' | 'u' | 'virama'>('a');
@@ -839,6 +1096,7 @@ function ChartTab({ useRa }: { useRa: boolean }) {
 // ─── Details tab: full per-word transliteration considerations ─
 
 const STAGE_LABELS: Record<Consideration['stage'], string> = {
+  detect: 'Language detection',
   normalize: 'Normalization',
   pronounce: 'Pronunciation',
   syllabify: 'Syllabification',
@@ -850,7 +1108,7 @@ function extractWords(text: string): string[] {
   const seen = new Set<string>();
   return text
     .split(/\s+/)
-    .map(token => token.replace(/^[^a-zA-Z]+|[^a-zA-Z]+$/g, ''))
+    .map(token => token.replace(/^[^A-Za-zÀ-ɏ]+|[^A-Za-zÀ-ɏ]+$/g, ''))
     .filter(word => {
       const key = word.toLowerCase();
       if (!word || seen.has(key)) return false;
@@ -859,7 +1117,7 @@ function extractWords(text: string): string[] {
     });
 }
 
-function DetailsTab({ mode, inputText, settings, cmuStatus, readings, nucleusEdits, onShowAbout }: { mode: Mode; inputText: string; settings: EngineSettings; cmuStatus: CmuDictStatus; readings: Readings; nucleusEdits: NucleusEdits; onShowAbout: () => void }) {
+function DetailsTab({ inputText, settings, cmuStatus, readings, nucleusEdits, langOverrides, onShowAbout }: { inputText: string; settings: EngineSettings; cmuStatus: CmuDictStatus; readings: Readings; nucleusEdits: NucleusEdits; langOverrides: LangOverrides; onShowAbout: () => void }) {
   const words = useMemo(() => extractWords(inputText), [inputText]);
 
   return (
@@ -869,7 +1127,7 @@ function DetailsTab({ mode, inputText, settings, cmuStatus, readings, nucleusEdi
           <div>
             <h2 className="font-serif text-xl font-normal">Word-by-word breakdown</h2>
             <p className="mt-1.5 max-w-2xl text-sm leading-6 text-gray">
-              One card per word showing every decision made on its way from {mode === 'english' ? 'English spelling' : 'Filipino spelling'} to Baybayin, in order.
+              One card per word showing every decision made on its way from spelling to Baybayin, in order — starting with which language the word was detected as.
             </p>
           </div>
           <button
@@ -889,31 +1147,38 @@ function DetailsTab({ mode, inputText, settings, cmuStatus, readings, nucleusEdi
       )}
 
       {words.map(word => (
-        <WordDetailCard key={`${mode}-${word}`} word={word} mode={mode} settings={settings} cmuStatus={cmuStatus} reading={readings[readingKey(word)]} edits={nucleusEdits[readingKey(word)]} />
+        <WordDetailCard key={word} word={word} settings={settings} cmuStatus={cmuStatus} reading={readings[readingKey(word)]} edits={nucleusEdits[readingKey(word)]} langOverrides={langOverrides} />
       ))}
     </div>
   );
 }
 
-function WordDetailCard({ word, mode, settings, cmuStatus, reading, edits }: { word: string; mode: Mode; settings: EngineSettings; cmuStatus: CmuDictStatus; reading?: string; edits?: Record<number, string> }) {
+function WordDetailCard({ word, settings, cmuStatus, reading, edits, langOverrides }: { word: string; settings: EngineSettings; cmuStatus: CmuDictStatus; reading?: string; edits?: Record<number, string>; langOverrides: LangOverrides }) {
   const detail = useMemo(() => {
+    const detection = detectWordLanguage(word);
+    const override = langOverrides[readingKey(word)];
+    const lang = override ?? detection.lang;
+    const reason = override
+      ? `Language set to ${LANG_LABELS[override]} manually on the Translate tab — auto-detection said ${LANG_LABELS[detection.lang]}.`
+      : detection.reason;
     const base = parseReading(reading);
     const composed = edits && Object.keys(edits).length > 0 ? { ...base, nucleusOverrides: edits } : base;
-    const english = mode === 'english' ? analyzeEnglishWord(word, composed) : null;
-    const bridgeWord = english ? english.latin : word;
+    const english = lang === 'english' ? analyzeEnglishWord(word, composed) : null;
+    const spanish = lang === 'spanish' ? analyzeSpanishWord(word) : null;
+    const bridgeWord = english ? english.latin : spanish ? spanish.latin : stripAccents(word.toLowerCase()).replace(/ñ/g, 'ny');
     const glyphs = analyzeWordGlyphs(bridgeWord, {
       useRa: settings.useRa,
       dropFinalConsonants: settings.dropFinalConsonants,
-      useDictionary: mode === 'filipino' && settings.useDictionary,
+      useDictionary: lang === 'filipino' && settings.useDictionary,
       viramaChar: VIRAMA_UNICODE,
     });
-    return { english, bridgeWord, glyphs };
+    return { lang, reason, english, spanish, bridgeWord, glyphs };
     // cmuStatus: re-analyze once the CMU dictionary loads
-  }, [mode, settings, word, cmuStatus, reading, edits]);
+  }, [settings, word, cmuStatus, reading, edits, langOverrides]);
 
-  const { english, bridgeWord, glyphs } = detail;
+  const { lang, reason, english, spanish, bridgeWord, glyphs } = detail;
   const considerationsFor = (stage: Consideration['stage']) =>
-    (english?.considerations ?? []).filter(item => item.stage === stage);
+    (english?.considerations ?? spanish?.considerations ?? []).filter(item => item.stage === stage);
 
   // Everything this word had to bend to fit Filipino's sound system and
   // Baybayin's script: sound-mapping compromises plus glide respellings.
@@ -933,15 +1198,29 @@ function WordDetailCard({ word, mode, settings, cmuStatus, reading, edits }: { w
         <span className="font-baybayin text-4xl text-ink">{glyphs.script}</span>
         <span className="ml-auto flex flex-wrap items-center gap-1.5">
           <AdaptedBadge count={adaptations.length} />
+          <span className="bg-ghost px-3 py-1 text-[10px] font-normal uppercase tracking-[0.2em] text-gray">
+            {LANG_LABELS[lang]}
+          </span>
           {english && (
             <span className="bg-ghost px-3 py-1 text-[10px] font-normal uppercase tracking-[0.2em] text-gray">
               pronunciation: {SOURCE_LABELS[english.source]}
+            </span>
+          )}
+          {spanish && (
+            <span className="bg-ghost px-3 py-1 text-[10px] font-normal uppercase tracking-[0.2em] text-gray">
+              {spanish.source === 'curated' ? 'old loan' : 'KWF rules'}
             </span>
           )}
         </span>
       </div>
 
       <div className="mt-5 space-y-5">
+        <StageSection step={nextStep()} title={STAGE_LABELS.detect}>
+          <p className="text-xs leading-5 text-gray">
+            Routed through the <span className="font-semibold text-ink">{LANG_LABELS[lang]}</span> pipeline. {reason}
+          </p>
+        </StageSection>
+
         {english && (
           <>
             <StageSection step={nextStep()} title={STAGE_LABELS.normalize}>
@@ -989,7 +1268,37 @@ function WordDetailCard({ word, mode, settings, cmuStatus, reading, edits }: { w
           </>
         )}
 
-        {!english && (
+        {spanish && (
+          <>
+            <StageSection step={nextStep()} title={`${STAGE_LABELS.map} (KWF respelling)`}>
+              <p className="text-sm">
+                Filipino respelling per the KWF Manwal sa Masinop na Pagsulat:{' '}
+                <span className="font-mono font-semibold text-ink">{bridgeWord}</span>
+              </p>
+              {considerationsFor('map').length > 0 ? (
+                <ConsiderationList items={considerationsFor('map').map(c => c.detail)} />
+              ) : (
+                <p className="text-xs leading-5 text-gray">
+                  This word's Spanish spelling already matches its Filipino form — no respelling rules needed to fire.
+                </p>
+              )}
+            </StageSection>
+
+            <StageSection step={nextStep()} title={`${STAGE_LABELS.syllabify} (onset–nucleus–coda)`}>
+              <SyllableTable
+                rows={spanish.syllables.map(s => ({
+                  onset: s.onset,
+                  nucleus: s.nucleus,
+                  coda: s.coda,
+                  result: s.latin,
+                }))}
+                resultHeader="Syllable"
+              />
+            </StageSection>
+          </>
+        )}
+
+        {!english && !spanish && (
           <StageSection step={nextStep()} title="Normalization & preprocessing">
             {glyphs.preprocessNotes.length > 0 ? (
               <ConsiderationList items={glyphs.preprocessNotes} />
@@ -1006,7 +1315,7 @@ function WordDetailCard({ word, mode, settings, cmuStatus, reading, edits }: { w
           </StageSection>
         )}
 
-        {!english && (
+        {!english && !spanish && (
           <StageSection step={nextStep()} title={`${STAGE_LABELS.syllabify} (onset–nucleus–coda)`}>
             <SyllableTable
               rows={glyphs.onc.map(s => ({
@@ -1021,7 +1330,7 @@ function WordDetailCard({ word, mode, settings, cmuStatus, reading, edits }: { w
         )}
 
         <StageSection step={nextStep()} title={STAGE_LABELS.render}>
-          {english && glyphs.preprocessNotes.length > 0 && <ConsiderationList items={glyphs.preprocessNotes} />}
+          {(english || spanish) && glyphs.preprocessNotes.length > 0 && <ConsiderationList items={glyphs.preprocessNotes} />}
           <div className="grid gap-3 sm:grid-cols-2">
             {glyphs.syllables.map((syllable, index) => (
               <div key={`${syllable.latin}-${index}`} className="border border-line bg-paper p-3">
@@ -1169,9 +1478,10 @@ function AboutTab() {
       <section className="border border-line bg-paper p-6 sm:p-8">
         <h2 className="font-serif text-2xl font-normal">How Baybayin Live works</h2>
         <p className="mt-3 max-w-full text-sm leading-6 text-gray">
-          Baybayin Live is fully deterministic. Every rule that fires is inspectable word by word on the Details tab. Instead of spelling out English words
+          Baybayin Live is fully deterministic. Every rule that fires is inspectable word by word on the Details tab. There is no language toggle: each word's
+          language — Filipino, English, or Spanish — is detected automatically, so Taglish and mixed text just work. Instead of spelling out English words
           letter by letter, they are converted the way Filipino usually borrows English words in practice by
-          pronunciation first. These new 'sound-first' words are then respelled into sounds Baybayin can write.
+          pronunciation first; Spanish words follow the KWF's own loanword respelling rules. These new 'sound-first' words are then respelled into sounds Baybayin can write.
         </p>
         <p className="mt-3 max-w-full text-sm leading-6 text-gray">
           In full honestly, this was made after reading a twitter thread on Baybayin use that included a very incorrect usage. I noticed
@@ -1189,6 +1499,47 @@ function AboutTab() {
           that this is futile and that old scripts are completely unusable beyond traditional Tagalog but hey, knowing why something does not work is still a contribution 
           to our collective body of knowledge.
         </p>
+      </section>
+
+      <section className="border border-line bg-paper p-6 sm:p-8">
+        <h2 className="mb-5 font-serif text-xl font-normal">One box, three languages: how detection works</h2>
+        <p className="mb-5 max-w-3xl text-sm leading-6 text-gray">
+          Every word runs through the same ordered, deterministic checks — no statistics, no guessing you can't inspect. The first check that
+          matches decides, and the word's card on the Translate tab shows which one it was. When detection gets a word wrong, the card's
+          language switch overrides it.
+        </p>
+        <div className="space-y-5">
+          <StageSection step={1} title="Curated Filipino vocabulary">
+            <p className="text-sm leading-6 text-gray">
+              A few hundred function words and everyday Filipino words are recognized outright. This list runs first because many common
+              Filipino words ("at", "ay", "may", "para", "ate") are also English dictionary entries and would otherwise be misread.
+            </p>
+          </StageSection>
+          <StageSection step={2} title="Curated Spanish vocabulary and ñ / accents">
+            <p className="text-sm leading-6 text-gray">
+              Recognized Spanish words route to the KWF Spanish rules — including every Spanish example the KWF manual itself uses, and
+              Spanish words English also borrowed ("hacienda", "fiesta"), which the English dictionary would otherwise claim. A word containing
+              ñ or an accented vowel is Spanish outright: English never spells with them.
+            </p>
+          </StageSection>
+          <StageSection step={3} title="English pronouncing dictionary">
+            <p className="text-sm leading-6 text-gray">
+              A hit in the CMU Pronouncing Dictionary (~123,000 words) routes the word through the English pronunciation-first pipeline.
+            </p>
+          </StageSection>
+          <StageSection step={4} title="Spanish-shaped spelling">
+            <p className="text-sm leading-6 text-gray">
+              A word the English dictionary doesn't know, containing a letter abakada never uses (c, f, j, q, v, x, z) or the digraphs ll/rr,
+              with a Spanish-style ending (a vowel or n, s, r, l, d), is treated as Spanish.
+            </p>
+          </StageSection>
+          <StageSection step={5} title="Fallback: read as Filipino">
+            <p className="text-sm leading-6 text-gray">
+              Anything left is read as spelled — exactly how Filipino treats unfamiliar words. Names and coinages come out the way a Filipino
+              reader would say them.
+            </p>
+          </StageSection>
+        </div>
       </section>
 
       <section className="border border-line bg-paper p-6 sm:p-8">
@@ -1270,8 +1621,44 @@ function AboutTab() {
           </StageSection>
           <StageSection step={3} title="Render glyphs">
             <p className="text-sm leading-6 text-gray">
-              Identical to English stage 5, the two modes converge on the same glyph renderer, so the same
-              settings (Modern Ra, native punctuation, pre-colonial codas) apply to both.
+              Identical to English stage 5, all three languages converge on the same glyph renderer, so the same
+              settings (Modern Ra, native punctuation, pre-colonial codas) apply throughout.
+            </p>
+          </StageSection>
+        </div>
+      </section>
+
+      <section className="border border-line bg-paper p-6 sm:p-8">
+        <h2 className="mb-5 font-serif text-xl font-normal">Spanish → Baybayin, in three stages</h2>
+        <p className="mb-5 max-w-3xl text-sm leading-6 text-gray">
+          The KWF Manwal sa Masinop na Pagsulat devotes real space to Spanish — the manual itself recommends reaching for the Spanish form
+          before the English one (§4.8, "Espanyol Muna, Bago Ingles") because Spanish spelling sits far closer to Filipino. Spanish needs no
+          pronunciation dictionary: its spelling is nearly phonemic, so ordered respelling rules cover it.
+        </p>
+        <div className="space-y-5">
+          <StageSection step={1} title="Respell per KWF">
+            <p className="text-sm leading-6 text-gray">
+              Each Spanish grapheme is rewritten to its Filipino value, every rule citing its KWF section: CH → TS ("letson", §6.3); the silent
+              H drops ("hacienda" → "asyenda", §4.12) except in the humano/historia families; J → H ("husto", "huwes", §4.13); G before E/I → H
+              ("rehiyon", "kolehiyo"); C → S or K by position ("siyudad", "kotse", §4.5); LL → LY ("kalye", "brilyante"); Ñ → NY ("banyo", §4.5);
+              V → B, Z → S, F → P (§4.2); QU → K ("keso"); the silent U of GUE/GUI drops ("gitara"); CON- → KUM- before B/P ("kumbento", §7.3);
+              and AU → AW ("bawtismo", §5.5). A short curated list covers lexicalized old loans the rules can't derive — "kabayo" (caballo),
+              "sibuyas" (cebollas), "tuwalya" (toalla) — per §4.3's deference to long-established forms.
+            </p>
+          </StageSection>
+          <StageSection step={2} title="Resolve diphthongs (kambal-patinig)">
+            <p className="text-sm leading-6 text-gray">
+              KWF chapter 5's rules apply in full: mid-word, a weak vowel (I/U) before a strong vowel becomes its glide ("estasyon", "tenyente",
+              "agwador"), but it is kept — with the glide written in — in the word's first syllable (§5.1 "piyano"), after a consonant cluster
+              (§5.2 "aksiyon", "impiyerno"), after H (§5.3 "kolehiyo"), and word-finally under stress (§5.4 "ekonomiya"). Strong-vowel pairs
+              take no glide at all (§5.5 "teatro", "leon").
+            </p>
+          </StageSection>
+          <StageSection step={3} title="Render glyphs">
+            <p className="text-sm leading-6 text-gray">
+              The respelled word goes through the same syllabifier and glyph renderer as Filipino and English. One happy accident of the script:
+              the manual's whole E/I and O/U chapter (§7) mostly needs no rules here, because Baybayin writes E and I with one kudlit and O and
+              U with another — "estilo" (Spanish) and "istayl" (English) begin with the very same glyph ᜁ.
             </p>
           </StageSection>
         </div>
@@ -1306,7 +1693,8 @@ function AboutTab() {
           <SourceCard title="KWF Manwal sa Masinop na Pagsulat (2014)" href="https://kwf.gov.ph/wp-content/uploads/MMP_Full.pdf" linkLabel="kwf.gov.ph (PDF)">
             Complements the Ortograpiyang Pambansa with detailed spelling and syllabication conventions
             (stages 4–5): guidance on hyphenation, prefix and enclitic attachment, and the treatment of
-            borrowed words that shapes how respelled syllables are broken and joined.
+            borrowed words that shapes how respelled syllables are broken and joined. Its Spanish loanword
+            rules (§4.3–4.13, ch. 5, §7.3) are the entire rulebook behind the Spanish pipeline.
           </SourceCard>
           <SourceCard title="Unicode Tagalog block (U+1700–171F)" href="https://www.unicode.org/charts/PDF/U1700.pdf" linkLabel="unicode.org (PDF)">
             The glyphs themselves (stage 5): base characters, the kudlit vowel marks, the krus-kudlit virama
@@ -1314,10 +1702,12 @@ function AboutTab() {
             "native punctuation" setting uses.
           </SourceCard>
           <SourceCard title="Where it can be wrong" href="" linkLabel="">
-            Letter-to-sound fallbacks are approximations; spelling-aware vowels stand down to pure phonetics
-            when a word's spelling can't be aligned with its syllables; and where Philippine English respelling
-            and Taglish phoneticization disagree ("kolor" vs "kaler"), we follow the spelling. The Details tab
-            flags every one of these judgment calls per word.
+            Language detection is deterministic, not omniscient — a word like "para" (Filipino, Spanish, and
+            English) routes by the fixed precedence and may need the per-word language switch. Letter-to-sound
+            fallbacks are approximations; spelling-aware vowels stand down to pure phonetics when a word's
+            spelling can't be aligned with its syllables; and where Philippine English respelling and Taglish
+            phoneticization disagree ("kolor" vs "kaler"), we follow the spelling. The Details tab flags every
+            one of these judgment calls per word.
           </SourceCard>
         </div>
       </section>

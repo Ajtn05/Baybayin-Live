@@ -38,7 +38,17 @@ export interface BaybayinCharacter {
 
 // ─── Transliteration trace (Details page) ────────────────────
 
-export type ConsiderationStage = 'normalize' | 'pronounce' | 'syllabify' | 'map' | 'render';
+export type ConsiderationStage = 'detect' | 'normalize' | 'pronounce' | 'syllabify' | 'map' | 'render';
+
+// ─── Per-word language routing ───────────────────────────────
+
+export type WordLang = 'filipino' | 'english' | 'spanish';
+
+export interface LangDetection {
+  lang: WordLang;
+  /** Human-readable reason for the choice, shown on the word's card. */
+  reason: string;
+}
 
 export interface Consideration {
   stage: ConsiderationStage;

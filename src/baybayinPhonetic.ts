@@ -850,6 +850,9 @@ export function convertPhoneticSyllableToLatinSyllable(
       nucleusPhoneme === 'AA' ||
       nucleusPhoneme === 'AH' ||
       (nucleusPhoneme === 'IH' && unstressed && spellingHint === 'e') ||
+      // /ɛ/ spelled "a" reads as written in Philippine English —
+      // the KWF's own example is "maraton" for marathon (§6.5)
+      (nucleusPhoneme === 'EH' && spellingHint === 'a') ||
       // r-colored vowel spelled -or/-ar: Filipino standardizes these as
       // written ("doktor", "propesor", "dolar", "kolor")
       (nucleusPhoneme === 'ER' && (spellingHint === 'o' || spellingHint === 'a'));

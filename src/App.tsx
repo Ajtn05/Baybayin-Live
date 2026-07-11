@@ -1303,6 +1303,11 @@ function AboutTab() {
             in full ("siya", "kuwento", "diyamante"), loan-letter substitutions, and the attested loanword
             forms our vowel rules reproduce ("doktor", "propesor", "dolar").
           </SourceCard>
+          <SourceCard title="KWF Manwal sa Masinop na Pagsulat (2014)" href="https://kwf.gov.ph/wp-content/uploads/MMP_Full.pdf" linkLabel="kwf.gov.ph (PDF)">
+            Complements the Ortograpiyang Pambansa with detailed spelling and syllabication conventions
+            (stages 4–5): guidance on hyphenation, prefix and enclitic attachment, and the treatment of
+            borrowed words that shapes how respelled syllables are broken and joined.
+          </SourceCard>
           <SourceCard title="Unicode Tagalog block (U+1700–171F)" href="https://www.unicode.org/charts/PDF/U1700.pdf" linkLabel="unicode.org (PDF)">
             The glyphs themselves (stage 5): base characters, the kudlit vowel marks, the krus-kudlit virama
             (U+1714) introduced in 1620 for final consonants, and the single and double danda punctuation the

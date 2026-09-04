@@ -145,134 +145,138 @@ export const NUCLEUS_MAP_NOTES: Record<string, string> = {
 
 // ─── High-priority hand-crafted dictionary ────────────────────
 
-export const OFFLINE_DICTIONARY: Record<string, PhoneticSyllable[]> = {
-  janelle: [
-    { onset: 'ZH', nucleus: 'AH', coda: '' },
-    { onset: 'N',  nucleus: 'EH', coda: 'L' },
-  ],
-  linguistics: [
-    { onset: 'L',   nucleus: 'IH', coda: 'NG'  },
-    { onset: 'G W', nucleus: 'IH', coda: ''     },
-    { onset: 'S T', nucleus: 'IH', coda: 'K S'  },
-  ],
-  chemistry: [
-    { onset: 'K',   nucleus: 'EH', coda: 'M' },
-    { onset: 'S T', nucleus: 'IH', coda: ''  },
-    { onset: 'R',   nucleus: 'IY', coda: ''  },
-  ],
-  christian: [
-    { onset: 'K R',  nucleus: 'IH', coda: 'S' },
-    { onset: 'T CH', nucleus: 'AH', coda: 'N' },
-  ],
-  christina: [
-    { onset: 'K R', nucleus: 'IH', coda: 'S' },
-    { onset: 'T',   nucleus: 'IY', coda: ''  },
-    { onset: 'N',   nucleus: 'AH', coda: ''  },
-  ],
-  michael: [
-    { onset: 'M', nucleus: 'AY', coda: ''  },
-    { onset: 'K', nucleus: 'AH', coda: 'L' },
-  ],
-  john:    [{ onset: 'JH', nucleus: 'AA', coda: 'N' }],
-  joseph: [
-    { onset: 'JH', nucleus: 'OW', coda: ''  },
-    { onset: 'S',  nucleus: 'AH', coda: 'F' },
-  ],
-  william: [
-    { onset: 'W', nucleus: 'IH', coda: 'L' },
-    { onset: 'Y', nucleus: 'AH', coda: 'M' },
-  ],
-  mary: [
-    { onset: 'M', nucleus: 'EH', coda: '' },
-    { onset: 'R', nucleus: 'IY', coda: '' },
-  ],
-  charles: [{ onset: 'CH', nucleus: 'AA', coda: 'R L Z' }],
-  david: [
-    { onset: 'D', nucleus: 'EY', coda: ''  },
-    { onset: 'V', nucleus: 'IH', coda: 'D' },
-  ],
-  james:   [{ onset: 'JH', nucleus: 'EY', coda: 'M Z' }],
-  sarah: [
-    { onset: 'S', nucleus: 'EH', coda: '' },
-    { onset: 'R', nucleus: 'AH', coda: '' },
-  ],
-  elizabeth: [
-    { onset: '',  nucleus: 'IH', coda: 'L' },
-    { onset: 'Z', nucleus: 'AH', coda: ''  },
-    { onset: 'B', nucleus: 'AH', coda: 'TH'},
-  ],
-  philippines: [
-    { onset: 'F', nucleus: 'IH', coda: 'L' },
-    { onset: 'P', nucleus: 'IY', coda: ''  },
-    { onset: 'N', nucleus: 'IH', coda: 'Z' },
-  ],
-  manila: [
-    { onset: 'M', nucleus: 'AH', coda: '' },
-    { onset: 'N', nucleus: 'IH', coda: '' },
-    { onset: 'L', nucleus: 'AH', coda: '' },
-  ],
-  mabuhay: [
-    { onset: 'M',  nucleus: 'AH', coda: '' },
-    { onset: 'B',  nucleus: 'UW', coda: '' },
-    { onset: 'HH', nucleus: 'AY', coda: '' },
-  ],
-  salamat: [
-    { onset: 'S', nucleus: 'AH', coda: ''  },
-    { onset: 'L', nucleus: 'AH', coda: ''  },
-    { onset: 'M', nucleus: 'AH', coda: 'T' },
-  ],
-  computer: [
-    { onset: 'K', nucleus: 'AH', coda: 'M' },
-    { onset: 'P Y', nucleus: 'UW', coda: '' },
-    { onset: 'T', nucleus: 'ER', coda: '' },
-  ],
-  science: [
-    { onset: 'S', nucleus: 'AY', coda: '' },
-    { onset: '', nucleus: 'AH', coda: 'N S' },
-  ],
-  english: [
-    { onset: '', nucleus: 'IH', coda: 'NG' },
-    { onset: 'G L', nucleus: 'IH', coda: 'SH' },
-  ],
-  translator: [
-    { onset: 'T R', nucleus: 'AE', coda: 'N S' },
-    { onset: 'L', nucleus: 'EY', coda: '' },
-    { onset: 'T', nucleus: 'ER', coda: '' },
-  ],
-  deterministic: [
-    { onset: 'D', nucleus: 'IH', coda: '' },
-    { onset: 'T', nucleus: 'ER', coda: '' },
-    { onset: 'M', nucleus: 'AH', coda: '' },
-    { onset: 'N', nucleus: 'IH', coda: 'S' },
-    { onset: 'T', nucleus: 'IH', coda: 'K' },
-  ],
-  phonetic: [
-    { onset: 'F', nucleus: 'AH', coda: '' },
-    { onset: 'N', nucleus: 'EH', coda: '' },
-    { onset: 'T', nucleus: 'IH', coda: 'K' },
-  ],
-  syllable: [
-    { onset: 'S', nucleus: 'IH', coda: '' },
-    { onset: 'L', nucleus: 'AH', coda: '' },
-    { onset: 'B', nucleus: 'AH', coda: 'L' },
-  ],
-  converter: [
-    { onset: 'K', nucleus: 'AH', coda: 'N' },
-    { onset: 'V', nucleus: 'ER', coda: '' },
-    { onset: 'T', nucleus: 'ER', coda: '' },
-  ],
-  filipino: [
-    { onset: 'F', nucleus: 'IH', coda: '' },
-    { onset: 'L', nucleus: 'AH', coda: '' },
-    { onset: 'P', nucleus: 'IY', coda: '' },
-    { onset: 'N', nucleus: 'OW', coda: '' },
-  ],
-  baybayin: [
-    { onset: 'B', nucleus: 'EY', coda: '' },
-    { onset: 'B', nucleus: 'AY', coda: '' },
-    { onset: 'Y', nucleus: 'IH', coda: 'N' },
-  ],
-};
+// Null prototype: this table is looked up with raw user input, and a plain
+// object literal would answer "constructor"/"__proto__" with inherited
+// members instead of undefined.
+export const OFFLINE_DICTIONARY: Record<string, PhoneticSyllable[]> =
+  Object.assign(Object.create(null), {
+    janelle: [
+      { onset: 'ZH', nucleus: 'AH', coda: '' },
+      { onset: 'N',  nucleus: 'EH', coda: 'L' },
+    ],
+    linguistics: [
+      { onset: 'L',   nucleus: 'IH', coda: 'NG'  },
+      { onset: 'G W', nucleus: 'IH', coda: ''     },
+      { onset: 'S T', nucleus: 'IH', coda: 'K S'  },
+    ],
+    chemistry: [
+      { onset: 'K',   nucleus: 'EH', coda: 'M' },
+      { onset: 'S T', nucleus: 'IH', coda: ''  },
+      { onset: 'R',   nucleus: 'IY', coda: ''  },
+    ],
+    christian: [
+      { onset: 'K R',  nucleus: 'IH', coda: 'S' },
+      { onset: 'T CH', nucleus: 'AH', coda: 'N' },
+    ],
+    christina: [
+      { onset: 'K R', nucleus: 'IH', coda: 'S' },
+      { onset: 'T',   nucleus: 'IY', coda: ''  },
+      { onset: 'N',   nucleus: 'AH', coda: ''  },
+    ],
+    michael: [
+      { onset: 'M', nucleus: 'AY', coda: ''  },
+      { onset: 'K', nucleus: 'AH', coda: 'L' },
+    ],
+    john:    [{ onset: 'JH', nucleus: 'AA', coda: 'N' }],
+    joseph: [
+      { onset: 'JH', nucleus: 'OW', coda: ''  },
+      { onset: 'S',  nucleus: 'AH', coda: 'F' },
+    ],
+    william: [
+      { onset: 'W', nucleus: 'IH', coda: 'L' },
+      { onset: 'Y', nucleus: 'AH', coda: 'M' },
+    ],
+    mary: [
+      { onset: 'M', nucleus: 'EH', coda: '' },
+      { onset: 'R', nucleus: 'IY', coda: '' },
+    ],
+    charles: [{ onset: 'CH', nucleus: 'AA', coda: 'R L Z' }],
+    david: [
+      { onset: 'D', nucleus: 'EY', coda: ''  },
+      { onset: 'V', nucleus: 'IH', coda: 'D' },
+    ],
+    james:   [{ onset: 'JH', nucleus: 'EY', coda: 'M Z' }],
+    sarah: [
+      { onset: 'S', nucleus: 'EH', coda: '' },
+      { onset: 'R', nucleus: 'AH', coda: '' },
+    ],
+    elizabeth: [
+      { onset: '',  nucleus: 'IH', coda: 'L' },
+      { onset: 'Z', nucleus: 'AH', coda: ''  },
+      { onset: 'B', nucleus: 'AH', coda: 'TH'},
+    ],
+    philippines: [
+      { onset: 'F', nucleus: 'IH', coda: 'L' },
+      { onset: 'P', nucleus: 'IY', coda: ''  },
+      { onset: 'N', nucleus: 'IH', coda: 'Z' },
+    ],
+    manila: [
+      { onset: 'M', nucleus: 'AH', coda: '' },
+      { onset: 'N', nucleus: 'IH', coda: '' },
+      { onset: 'L', nucleus: 'AH', coda: '' },
+    ],
+    mabuhay: [
+      { onset: 'M',  nucleus: 'AH', coda: '' },
+      { onset: 'B',  nucleus: 'UW', coda: '' },
+      { onset: 'HH', nucleus: 'AY', coda: '' },
+    ],
+    salamat: [
+      { onset: 'S', nucleus: 'AH', coda: ''  },
+      { onset: 'L', nucleus: 'AH', coda: ''  },
+      { onset: 'M', nucleus: 'AH', coda: 'T' },
+    ],
+    computer: [
+      { onset: 'K', nucleus: 'AH', coda: 'M' },
+      { onset: 'P Y', nucleus: 'UW', coda: '' },
+      { onset: 'T', nucleus: 'ER', coda: '' },
+    ],
+    science: [
+      { onset: 'S', nucleus: 'AY', coda: '' },
+      { onset: '', nucleus: 'AH', coda: 'N S' },
+    ],
+    english: [
+      { onset: '', nucleus: 'IH', coda: 'NG' },
+      { onset: 'G L', nucleus: 'IH', coda: 'SH' },
+    ],
+    translator: [
+      { onset: 'T R', nucleus: 'AE', coda: 'N S' },
+      { onset: 'L', nucleus: 'EY', coda: '' },
+      { onset: 'T', nucleus: 'ER', coda: '' },
+    ],
+    deterministic: [
+      { onset: 'D', nucleus: 'IH', coda: '' },
+      { onset: 'T', nucleus: 'ER', coda: '' },
+      { onset: 'M', nucleus: 'AH', coda: '' },
+      { onset: 'N', nucleus: 'IH', coda: 'S' },
+      { onset: 'T', nucleus: 'IH', coda: 'K' },
+    ],
+    phonetic: [
+      { onset: 'F', nucleus: 'AH', coda: '' },
+      { onset: 'N', nucleus: 'EH', coda: '' },
+      { onset: 'T', nucleus: 'IH', coda: 'K' },
+    ],
+    syllable: [
+      { onset: 'S', nucleus: 'IH', coda: '' },
+      { onset: 'L', nucleus: 'AH', coda: '' },
+      { onset: 'B', nucleus: 'AH', coda: 'L' },
+    ],
+    converter: [
+      { onset: 'K', nucleus: 'AH', coda: 'N' },
+      { onset: 'V', nucleus: 'ER', coda: '' },
+      { onset: 'T', nucleus: 'ER', coda: '' },
+    ],
+    filipino: [
+      { onset: 'F', nucleus: 'IH', coda: '' },
+      { onset: 'L', nucleus: 'AH', coda: '' },
+      { onset: 'P', nucleus: 'IY', coda: '' },
+      { onset: 'N', nucleus: 'OW', coda: '' },
+    ],
+    baybayin: [
+      { onset: 'B', nucleus: 'EY', coda: '' },
+      { onset: 'B', nucleus: 'AY', coda: '' },
+      { onset: 'Y', nucleus: 'IH', coda: 'N' },
+    ],
+  });
 
 // ─── G2P helper ──────────────────────────────────────────────
 
@@ -281,6 +285,13 @@ export const OFFLINE_DICTIONARY: Record<string, PhoneticSyllable[]> = {
  * e.g. tag('K','AH','M') → '[K][AH][M]'
  */
 const tag = (...phonemes: string[]) => phonemes.map(p => `[${p}]`).join('');
+
+// Built once. These were compiled fresh on every englishToArpabet call, which
+// runs for every word the CMU dictionary does not cover. (w is handled
+// separately, after the vowel rules.)
+const SINGLE_CONSONANT_RULES: [RegExp, string][] = [...'bdfghklmnprst'].map(
+  c => [new RegExp(c, 'g'), tag(c.toUpperCase())],
+);
 
 // ─── englishToArpabet ────────────────────────────────────────
 
@@ -468,10 +479,8 @@ export function englishToArpabet(word: string): string {
   w = applyToUntagged(w, /u/g, tag('AH'));
 
   // ── Step 10: Single-letter consonants ────────────────────────
-  const SINGLE_CONS = 'bdfghklmnprst w'.replace(' ', '');  // w handled below
-  for (const c of SINGLE_CONS) {
-    const uc = c.toUpperCase();
-    w = applyToUntagged(w, new RegExp(c, 'g'), tag(uc));
+  for (const [re, phoneme] of SINGLE_CONSONANT_RULES) {
+    w = applyToUntagged(w, re, phoneme);
   }
   w = applyToUntagged(w, /w/g, tag('W'));
 
@@ -548,6 +557,14 @@ function groupIntoClusters(phonemes: string[]): Cluster[] {
 
 // ─── Onset Maximalism (Caines/Evans rules) ───────────────────
 
+// Hoisted out of splitCluster: it runs once per intervocalic cluster, and
+// these were being rebuilt on every call.
+const ONSET_OBSTRUENTS = new Set(['P','B','T','D','K','G','F','V','S','Z','SH','ZH','TH','DH','CH','JH']);
+const ONSET_LIQUID_GLIDE = new Set(['L','R','W','Y']);
+// Clusters that are legal English onsets even without a liquid/glide second.
+const ONSET_EXCEPTION_PAIRS = new Set(['PY','BY','MY','KY','GY','TY','DY','FY','VY','NY',
+                                       'KW','GW','TW','DW','SW','SN','SM','SP','ST','SK','SF']);
+
 /**
  * Given a consonant cluster that sits BETWEEN two vowels, split it into
  * (coda-of-current-syllable, onset-of-next-syllable) using Onset Maximalism:
@@ -601,21 +618,16 @@ function splitCluster(consonants: string[], why?: string[]): { coda: string[]; o
     const [c1] = onset;
 
     // 5a. First must be an obstruent (or S / SH)
-    const OBSTRUENTS = new Set(['P','B','T','D','K','G','F','V','S','Z','SH','ZH','TH','DH','CH','JH']);
-    if (!OBSTRUENTS.has(c1)) {
+    if (!ONSET_OBSTRUENTS.has(c1)) {
       shiftToCoda();
       why?.push(`/${c1}/ cannot start a two-consonant English onset`);
     }
 
     // 5b. Second must be a liquid/glide (L R W Y) if first ≠ S
     // Special case: /PY/ is a valid English onset (computer, pure)
-    const LIQUID_GLIDE = new Set(['L','R','W','Y']);
-    if (onset.length === 2 && onset[0] !== 'S' && !LIQUID_GLIDE.has(onset[1])) {
-      // Exceptional clusters that ARE valid onsets even without liquid/glide second
-      const EXCEPTION_PAIRS = new Set(['PY','BY','MY','KY','GY','TY','DY','FY','VY','NY',
-                                        'KW','GW','TW','DW','SW','SN','SM','SP','ST','SK','SF']);
+    if (onset.length === 2 && onset[0] !== 'S' && !ONSET_LIQUID_GLIDE.has(onset[1])) {
       const [first, second] = onset;
-      if (!EXCEPTION_PAIRS.has(first + second)) {
+      if (!ONSET_EXCEPTION_PAIRS.has(first + second)) {
         shiftToCoda();
         why?.push(`/${first} ${second}/ is not a legal English onset pair`);
       }
@@ -808,6 +820,15 @@ export function alignNucleiToSpelling(word: string, nucleusCount: number): (stri
       units = unitsFrom(groups.slice(0, -1));
     }
   }
+
+  // Word-final syllabic "-le" ("table", "people", "simple"): the written "e"
+  // is silent, and the syllable's real vowel is the epenthetic one carrying
+  // the L. Filipino respelling writes that vowel "o" — "teybol", "pipol",
+  // "simpol" — so the hint is "o" rather than the silent letter. A genuine
+  // "-el" spelling ("level" → "lebel") is untouched.
+  if (units && units.length > 1 && units[units.length - 1] === 'e' && /[^aeiouy]le$/.test(letters)) {
+    units = [...units.slice(0, -1), 'o'];
+  }
   return units;
 }
 
@@ -848,7 +869,11 @@ export function convertPhoneticSyllableToLatinSyllable(
     const unstressed = !s.stress || s.stress === '0';
     const overridable =
       nucleusPhoneme === 'AA' ||
-      nucleusPhoneme === 'AH' ||
+      // Only the *unstressed* schwa follows the spelling. Stressed /ʌ/
+      // ("bus", "love", "number") is a distinct vowel that Philippine
+      // English realizes as [a] whatever the letter says: "bas", "lab",
+      // "namber".
+      (nucleusPhoneme === 'AH' && unstressed) ||
       (nucleusPhoneme === 'IH' && unstressed && spellingHint === 'e') ||
       // /ɛ/ spelled "a" reads as written in Philippine English —
       // the KWF's own example is "maraton" for marathon (§6.5)

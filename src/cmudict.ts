@@ -24,39 +24,64 @@ export function cmuDictSize(): number {
 
 // Dictionary keys are already uppercase in cmudict.0.7a, so no
 // per-line case conversion is needed.
-function parseLine(map: Map<string, string[]>, line: string): void {
-  if (!line || line.startsWith(';;;')) return;
-  const sep = line.indexOf('  ');
-  if (sep <= 0) return;
-  let word = line.slice(0, sep);
+//
+// Lines are read as [start, end) spans of the source text rather than as
+// split strings: the file is ~134k lines, and materializing them all costs a
+// 134k-element array plus a string per line that is thrown away immediately.
+// Only the word and its pronunciation — the parts actually kept — allocate.
+function parseSpan(map: Map<string, string[]>, text: string, start: number, end: number): void {
+  // Tolerate CRLF line endings.
+  if (end > start && text.charCodeAt(end - 1) === 13 /* '\r' */) end--;
+  if (end <= start) return;
+  // The ";;;" header comments only. A lone leading ';' is a real key —
+  // cmudict spells out the punctuation marks (";SEMI-COLON").
+  if (text.charCodeAt(start) === 59 /* ';' */ && text.startsWith(';;;', start)) return;
+
+  const sep = text.indexOf('  ', start);
+  if (sep <= start || sep >= end) return;
+
   // "(2)"-style alternates share the base word's entry.
-  if (line.charCodeAt(sep - 1) === 41 /* ')' */) {
-    const paren = word.lastIndexOf('(');
-    if (paren <= 0) return;
-    word = word.slice(0, paren);
-    const existing = map.get(word);
-    if (existing) existing.push(line.slice(sep + 2).trim());
+  if (text.charCodeAt(sep - 1) === 41 /* ')' */) {
+    const paren = text.lastIndexOf('(', sep - 1);
+    if (paren <= start) return;
+    const existing = map.get(text.slice(start, paren));
+    if (existing) existing.push(text.slice(sep + 2, end).trim());
     return;
   }
-  map.set(word, [line.slice(sep + 2).trim()]);
+  map.set(text.slice(start, sep), [text.slice(sep + 2, end).trim()]);
 }
 
 export function parseCmuDict(text: string): Map<string, string[]> {
   const map = new Map<string, string[]>();
-  for (const line of text.split('\n')) parseLine(map, line);
+  for (let i = 0; i < text.length; ) {
+    let nl = text.indexOf('\n', i);
+    if (nl === -1) nl = text.length;
+    parseSpan(map, text, i, nl);
+    i = nl + 1;
+  }
   return map;
 }
 
-// Parse in slices, yielding to the event loop between them, so the
-// ~134k-line file never blocks the main thread in one long task.
+// Parse in time slices, yielding to the event loop between them, so the file
+// never blocks the main thread in one long task. Slicing on elapsed time
+// rather than a line count keeps each pause inside a frame's budget whatever
+// the device's speed, and yields as few times as that allows.
 async function parseCmuDictChunked(text: string): Promise<Map<string, string[]>> {
-  const lines = text.split('\n');
   const map = new Map<string, string[]>();
-  const CHUNK = 20000;
-  for (let start = 0; start < lines.length; start += CHUNK) {
-    const end = Math.min(start + CHUNK, lines.length);
-    for (let i = start; i < end; i++) parseLine(map, lines[i]);
-    if (end < lines.length) await new Promise(resolve => setTimeout(resolve, 0));
+  const SLICE_MS = 8;
+  let deadline = performance.now() + SLICE_MS;
+  let sinceCheck = 0;
+
+  for (let i = 0; i < text.length; ) {
+    let nl = text.indexOf('\n', i);
+    if (nl === -1) nl = text.length;
+    parseSpan(map, text, i, nl);
+    i = nl + 1;
+    // Reading the clock per line would cost more than the parsing does.
+    if ((++sinceCheck & 4095) === 0 && performance.now() >= deadline) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      deadline = performance.now() + SLICE_MS;
+    }
   }
   return map;
 }
@@ -83,7 +108,10 @@ export async function loadCmuDict(url = '/cmudict-0.7a.txt'): Promise<void> {
 function entryFor(word: string): string[] | null {
   if (!dict) return null;
   const key = word.toUpperCase();
-  return dict.get(key) ?? dict.get(key.replace(/'/g, '')) ?? null;
+  const entry = dict.get(key);
+  if (entry) return entry;
+  // Only pay for the apostrophe-stripped retry when there is one to strip.
+  return key.includes("'") ? dict.get(key.replace(/'/g, '')) ?? null : null;
 }
 
 /**

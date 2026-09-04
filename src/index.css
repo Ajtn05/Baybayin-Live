@@ -1,4 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100..900;1,100..900&family=Ibarra+Real+Nova:ital,wght@0,400..700;1,400..700&family=Noto+Sans+Tagalog&family=JetBrains+Mono:wght@300;400;500&display=swap');
+/* Fonts are linked from index.html — a CSS @import here would only be
+   discovered after this stylesheet downloads, adding a round trip before
+   any text can paint. */
 @import "tailwindcss";
 
 @theme {

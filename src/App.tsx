@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Check,
@@ -26,7 +26,7 @@ import {
   WordReading,
   analyzeEnglishWord,
 } from './baybayinPhonetic';
-import { CmuDictStatus, cmuDictSize, loadCmuDict } from './cmudict';
+import { CmuDictStatus, cmuDictSize, cmuDictStatus, loadCmuDict } from './cmudict';
 import { detectWordLanguage, stripAccents } from './languageDetect';
 import { SpanishWordAnalysis, analyzeSpanishWord } from './spanishRespeller';
 import { Consideration, WordGlyphAnalysis, WordLang } from './types';
@@ -67,8 +67,11 @@ type NucleusEdits = Record<string, Record<number, string>>;
 // Per-word manual language choice, outranking auto-detection.
 type LangOverrides = Record<string, WordLang>;
 
+// The "w:" prefix namespaces the key: without it a word like "constructor"
+// or "__proto__" would read an Object.prototype member back out of these
+// plain-object state maps instead of undefined.
 function readingKey(word: string): string {
-  return stripAccents(word.toLowerCase()).replace(/ñ/g, 'n').replace(/[^a-z]/g, '');
+  return 'w:' + stripAccents(word.toLowerCase()).replace(/ñ/g, 'n').replace(/[^a-z]/g, '');
 }
 
 function parseReading(value?: string): WordReading | undefined {
@@ -108,7 +111,7 @@ interface BridgeWord {
   spanish?: SpanishWordAnalysis;
 }
 
-function analyzeBridgeWord(token: string, readings: Readings, edits: NucleusEdits, langOverrides: LangOverrides): BridgeWord {
+function computeBridgeWord(token: string, readings: Readings, edits: NucleusEdits, langOverrides: LangOverrides): BridgeWord {
   const detection = detectWordLanguage(token);
   const override = langOverrides[readingKey(token)];
   const lang = override ?? detection.lang;
@@ -135,6 +138,45 @@ function analyzeBridgeWord(token: string, readings: Readings, edits: NucleusEdit
   return { ...base, latin: stripAccents(token).replace(/ñ/gi, 'ny') };
 }
 
+// Analysis is a pure function of (word, its overrides, dictionary state), and
+// the same words recur constantly — across keystrokes, across the Translate /
+// Display / Details tabs, and within one text. Memoizing it turns a keystroke
+// into work on the edited word only, and the stable object identity lets the
+// word cards below skip re-rendering entirely.
+const ANALYSIS_CACHE_LIMIT = 2000;
+const bridgeWordCache = new Map<string, BridgeWord>();
+const glyphCache = new Map<string, WordGlyphAnalysis>();
+
+function cached<T>(store: Map<string, T>, key: string, compute: () => T): T {
+  const hit = store.get(key);
+  if (hit !== undefined) return hit;
+  const value = compute();
+  // Cheap bound: a long editing session drops the whole cache rather than
+  // tracking recency for what is only a recomputation cost.
+  if (store.size >= ANALYSIS_CACHE_LIMIT) store.clear();
+  store.set(key, value);
+  return value;
+}
+
+function analyzeBridgeWord(token: string, readings: Readings, edits: NucleusEdits, langOverrides: LangOverrides): BridgeWord {
+  const key = readingKey(token);
+  const wordEdits = edits[key];
+  const cacheKey = `${cmuDictStatus()}|${token}|${readings[key] ?? ''}|${langOverrides[key] ?? ''}|${
+    wordEdits ? JSON.stringify(wordEdits) : ''
+  }`;
+  return cached(bridgeWordCache, cacheKey, () => computeBridgeWord(token, readings, edits, langOverrides));
+}
+
+/** Memoized `analyzeWordGlyphs` — same reasoning as `analyzeBridgeWord`. */
+function analyzeGlyphs(latin: string, useRa: boolean, dropFinalConsonants: boolean, useDictionary: boolean): WordGlyphAnalysis {
+  return cached(glyphCache, `${latin}|${useRa}|${dropFinalConsonants}|${useDictionary}`, () =>
+    analyzeWordGlyphs(latin, { useRa, dropFinalConsonants, useDictionary, viramaChar: VIRAMA_UNICODE }),
+  );
+}
+
+/** Shared empty maps, so a word with no overrides keeps a stable prop identity. */
+const NO_EDITS: Record<number, string> = {};
+
 function buildBridge(text: string, readings: Readings, edits: NucleusEdits, langOverrides: LangOverrides) {
   const words: BridgeWord[] = [];
   const mappedText = splitInput(text)
@@ -151,6 +193,11 @@ function buildBridge(text: string, readings: Readings, edits: NucleusEdits, lang
 
 export default function App() {
   const [inputText, setInputText] = useState('kumusta, computer, corazón');
+  // The textarea stays on `inputText` so typing is never held up; every
+  // derived analysis reads `sourceInput`, which React re-computes at a lower
+  // priority. On a long paragraph this is the difference between a laggy
+  // caret and a smooth one.
+  const sourceInput = useDeferredValue(inputText);
   const [activeTab, setActiveTab] = useState<Tab>('translate');
   const [useRa, setUseRa] = useState(true);
   const [nativePunctuation, setNativePunctuation] = useState(true);
@@ -164,7 +211,7 @@ export default function App() {
   const [nucleusEdits, setNucleusEdits] = useState<NucleusEdits>({});
   const [langOverrides, setLangOverrides] = useState<LangOverrides>({});
 
-  const chooseLang = (word: string, lang: WordLang, autoLang: WordLang) =>
+  const chooseLang = useCallback((word: string, lang: WordLang, autoLang: WordLang) =>
     setLangOverrides(current => {
       const key = readingKey(word);
       const next = { ...current };
@@ -172,9 +219,9 @@ export default function App() {
       if (lang === autoLang) delete next[key];
       else next[key] = lang;
       return next;
-    });
+    }), []);
 
-  const chooseReading = (word: string, value: string) => {
+  const chooseReading = useCallback((word: string, value: string) => {
     setReadings(current => ({ ...current, [readingKey(word)]: value }));
     // A different reading changes the syllable layout, so its manual
     // vowel edits no longer line up — drop them.
@@ -183,16 +230,16 @@ export default function App() {
       delete next[readingKey(word)];
       return next;
     });
-  };
+  }, []);
 
-  const editNucleus = (word: string, syllableIndex: number, vowel: string | null) =>
+  const editNucleus = useCallback((word: string, syllableIndex: number, vowel: string | null) =>
     setNucleusEdits(current => {
       const key = readingKey(word);
       const forWord = { ...(current[key] ?? {}) };
       if (vowel === null) delete forWord[syllableIndex];
       else forWord[syllableIndex] = vowel;
       return { ...current, [key]: forWord };
-    });
+    }), []);
 
   useEffect(() => {
     loadCmuDict()
@@ -213,8 +260,8 @@ export default function App() {
   // cmuStatus is a dependency so detection and English analyses re-run
   // once the CMU Pronouncing Dictionary finishes loading.
   const bridge = useMemo(
-    () => buildBridge(inputText, readings, nucleusEdits, langOverrides),
-    [inputText, cmuStatus, readings, nucleusEdits, langOverrides],
+    () => buildBridge(sourceInput, readings, nucleusEdits, langOverrides),
+    [sourceInput, cmuStatus, readings, nucleusEdits, langOverrides],
   );
   const sourceText = bridge.mappedText;
 
@@ -228,7 +275,7 @@ export default function App() {
     });
 
     const detected = bridge.words.filter(w => w.lang !== 'filipino');
-    if (detected.length > 0 && inputText.trim()) {
+    if (detected.length > 0 && sourceInput.trim()) {
       return {
         ...result,
         notes: [
@@ -240,7 +287,7 @@ export default function App() {
     }
 
     return result;
-  }, [bridge.words, dropFinalConsonants, inputText, nativePunctuation, sourceText, useDictionary, useRa]);
+  }, [bridge.words, dropFinalConsonants, sourceInput, nativePunctuation, sourceText, useDictionary, useRa]);
 
   const oncRows = useMemo(
     () =>
@@ -273,14 +320,14 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!inputText.trim() || !translationResult.text.trim()) return;
+    if (!sourceInput.trim() || !translationResult.text.trim()) return;
     const timer = window.setTimeout(() => {
       setHistory(current => {
-        if (current[0]?.input === inputText) return current;
+        if (current[0]?.input === sourceInput.trim()) return current;
         const next = [
           {
             id: crypto.randomUUID(),
-            input: inputText.trim(),
+            input: sourceInput.trim(),
             output: translationResult.text,
             createdAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           },
@@ -292,7 +339,14 @@ export default function App() {
     }, 1200);
 
     return () => window.clearTimeout(timer);
-  }, [inputText, translationResult.text]);
+  }, [sourceInput, translationResult.text]);
+
+  // One stable object per settings change, so the Display and Details tabs'
+  // memoized work is not invalidated by every unrelated re-render.
+  const settings = useMemo<EngineSettings>(
+    () => ({ useRa, dropFinalConsonants, useDictionary }),
+    [useRa, dropFinalConsonants, useDictionary],
+  );
 
   const copyOutput = async () => {
     await navigator.clipboard.writeText(translationResult.text);
@@ -301,7 +355,7 @@ export default function App() {
   };
 
   const downloadSvg = () => {
-    const safeInput = inputText.replace(/[<>&]/g, '');
+    const safeInput = sourceInput.replace(/[<>&]/g, '');
     const safeOutput = translationResult.text.replace(/[<>&]/g, '');
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
   <rect width="1200" height="720" fill="#ffffff"/>
@@ -482,10 +536,10 @@ export default function App() {
                       key={`${word.original}-${index}`}
                       word={word}
                       reading={readings[readingKey(word.original)] ?? 'cmu:0'}
-                      edits={nucleusEdits[readingKey(word.original)] ?? {}}
-                      onChooseLang={lang => chooseLang(word.original, lang, word.autoLang)}
-                      onChooseReading={value => chooseReading(word.original, value)}
-                      onEditNucleus={(syllableIndex, vowel) => editNucleus(word.original, syllableIndex, vowel)}
+                      edits={nucleusEdits[readingKey(word.original)] ?? NO_EDITS}
+                      onChooseLang={chooseLang}
+                      onChooseReading={chooseReading}
+                      onEditNucleus={editNucleus}
                     />
                   ))}
                 </div>
@@ -505,8 +559,8 @@ export default function App() {
 
         {activeTab === 'display' && (
           <DisplayTab
-            inputText={inputText}
-            settings={{ useRa, dropFinalConsonants, useDictionary }}
+            inputText={sourceInput}
+            settings={settings}
             nativePunctuation={nativePunctuation}
             cmuStatus={cmuStatus}
             readings={readings}
@@ -517,8 +571,8 @@ export default function App() {
 
         {activeTab === 'details' && (
           <DetailsTab
-            inputText={inputText}
-            settings={{ useRa, dropFinalConsonants, useDictionary }}
+            inputText={sourceInput}
+            settings={settings}
             cmuStatus={cmuStatus}
             readings={readings}
             nucleusEdits={nucleusEdits}
@@ -660,7 +714,7 @@ function LangSwitch({ word, onChange }: { word: BridgeWord; onChange: (lang: Wor
  * respelling, and — for English — the reading switch plus a
  * per-syllable vowel editor; for Spanish, the KWF rules that fired.
  */
-function BridgeWordCard({
+const BridgeWordCard = React.memo(function BridgeWordCard({
   word,
   reading,
   edits,
@@ -671,9 +725,9 @@ function BridgeWordCard({
   word: BridgeWord;
   reading: string;
   edits: Record<number, string>;
-  onChooseLang: (lang: WordLang) => void;
-  onChooseReading: (value: string) => void;
-  onEditNucleus: (syllableIndex: number, vowel: string | null) => void;
+  onChooseLang: (word: string, lang: WordLang, autoLang: WordLang) => void;
+  onChooseReading: (word: string, value: string) => void;
+  onEditNucleus: (word: string, syllableIndex: number, vowel: string | null) => void;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
   const english = word.english;
@@ -707,10 +761,10 @@ function BridgeWordCard({
       )}
       <p className="mt-2 text-xs leading-5 text-gray">{word.reason}</p>
 
-      <LangSwitch word={word} onChange={lang => { setSelected(null); onChooseLang(lang); }} />
+      <LangSwitch word={word} onChange={lang => { setSelected(null); onChooseLang(word.original, lang, word.autoLang); }} />
 
       {english && (
-        <ReadingSwitch word={english} value={reading} onChange={value => { setSelected(null); onChooseReading(value); }} />
+        <ReadingSwitch word={english} value={reading} onChange={value => { setSelected(null); onChooseReading(word.original, value); }} />
       )}
 
       {word.spanish && spanishRules.length > 0 && (
@@ -764,7 +818,7 @@ function BridgeWordCard({
                 <button
                   key={choice.value}
                   title={choice.hint}
-                  onClick={() => onEditNucleus(selected, selectedEdit === choice.value ? null : choice.value)}
+                  onClick={() => onEditNucleus(word.original, selected, selectedEdit === choice.value ? null : choice.value)}
                   className={`pb-0.5 font-mono text-xs transition ${
                     selectedEdit === choice.value ? 'border-b border-ink text-ink' : 'border-b border-transparent text-gray hover:text-ink'
                   }`}
@@ -784,7 +838,7 @@ function BridgeWordCard({
       )}
     </div>
   );
-}
+});
 
 /**
  * Small badge shown wherever the engine had to adapt a word because
@@ -933,12 +987,12 @@ function DisplayTab({
       splitInput(inputText).flatMap<DisplayItem>(token => {
         if (WORD_CHAR.test(token)) {
           const word = analyzeBridgeWord(token, readings, nucleusEdits, langOverrides);
-          const glyphs = analyzeWordGlyphs(word.latin, {
-            useRa: settings.useRa,
-            dropFinalConsonants: settings.dropFinalConsonants,
-            useDictionary: word.lang === 'filipino' && settings.useDictionary,
-            viramaChar: VIRAMA_UNICODE,
-          });
+          const glyphs = analyzeGlyphs(
+            word.latin,
+            settings.useRa,
+            settings.dropFinalConsonants,
+            word.lang === 'filipino' && settings.useDictionary,
+          );
           return [{ type: 'word' as const, word, glyphs }];
         }
         const result: DisplayItem[] = [];
@@ -1009,7 +1063,7 @@ function DisplayTab({
 }
 
 /** One word of the interlinear specimen: input, bridge, syllable-over-glyph columns. */
-function WordSpecimen({ word, glyphs, scale }: { word: BridgeWord; glyphs: WordGlyphAnalysis; scale: number }) {
+const WordSpecimen = React.memo(function WordSpecimen({ word, glyphs, scale }: { word: BridgeWord; glyphs: WordGlyphAnalysis; scale: number }) {
   const bridged = glyphs.processed;
   const changed = bridged !== word.original.toLowerCase();
 
@@ -1034,7 +1088,7 @@ function WordSpecimen({ word, glyphs, scale }: { word: BridgeWord; glyphs: WordG
       </div>
     </div>
   );
-}
+});
 
 function ChartTab({ useRa }: { useRa: boolean }) {
   const [selected, setSelected] = useState(BAYBAYIN_CHART_DATA[3]);
@@ -1153,7 +1207,7 @@ function DetailsTab({ inputText, settings, cmuStatus, readings, nucleusEdits, la
   );
 }
 
-function WordDetailCard({ word, settings, cmuStatus, reading, edits, langOverrides }: { word: string; settings: EngineSettings; cmuStatus: CmuDictStatus; reading?: string; edits?: Record<number, string>; langOverrides: LangOverrides }) {
+const WordDetailCard = React.memo(function WordDetailCard({ word, settings, cmuStatus, reading, edits, langOverrides }: { word: string; settings: EngineSettings; cmuStatus: CmuDictStatus; reading?: string; edits?: Record<number, string>; langOverrides: LangOverrides }) {
   const detail = useMemo(() => {
     const detection = detectWordLanguage(word);
     const override = langOverrides[readingKey(word)];
@@ -1372,7 +1426,7 @@ function WordDetailCard({ word, settings, cmuStatus, reading, edits, langOverrid
       )}
     </section>
   );
-}
+});
 
 function StageSection({ step, title, children }: { step: number; title: string; children: React.ReactNode }) {
   return (

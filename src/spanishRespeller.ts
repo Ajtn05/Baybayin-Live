@@ -29,26 +29,29 @@ export interface SpanishWordAnalysis {
 // treats as fixed and which the grapheme rules cannot derive
 // (vowel shifts, metathesis, dropped letters).
 
-const CURATED_FORMS: Record<string, { latin: string; note: string }> = {
-  caballo:     { latin: 'kabayo',     note: 'Old loan (KWF §4.3): "caballo" was assimilated as "kabayo" — the LL became Y in this early borrowing, unlike the later LL → LY pattern.' },
-  cebolla:     { latin: 'sibuyas',    note: 'Old loan (KWF §4.3): "cebolla(+s)" was assimilated as "sibuyas", with the plural S fused into the word.' },
-  cebollas:    { latin: 'sibuyas',    note: 'Old loan (KWF §4.3): "cebolla(+s)" was assimilated as "sibuyas", with the plural S fused into the word.' },
-  celaje:      { latin: 'silahis',    note: 'Old loan (KWF §4.3): "celaje(+s)" was assimilated as "silahis".' },
-  celajes:     { latin: 'silahis',    note: 'Old loan (KWF §4.3): "celaje(+s)" was assimilated as "silahis".' },
-  candela:     { latin: 'kandila',    note: 'Old loan (KWF §4.3): "candela" was assimilated as "kandila", with E shifting to I.' },
-  ventana:     { latin: 'bintana',    note: 'Old loan (KWF §4.2): "ventana" was assimilated as "bintanà", with E shifting to I.' },
-  confesar:    { latin: 'kumpisal',   note: 'Old loan (KWF §7.3): "confesar" was assimilated as "kumpisal" — CON- became KUM- before P, and the vowels shifted.' },
-  prejuicio:   { latin: 'perwisyo',   note: 'Old loan (KWF §5.3): "prejuicio" was assimilated as "perwisyo", with the weak H of the J sound vanishing entirely.' },
-  septiembre:  { latin: 'setyembre',  note: 'Old loan (KWF §5.4): "septiembre" is written "Setyembre" — the P before T is not sounded.' },
-  chineguelas: { latin: 'sinigwelas', note: 'Old loan (KWF §5): "chineguelas" was assimilated as "sinigwelas", with CH softening to S.' },
-  chismes:     { latin: 'tsismis',    note: 'Old loan (KWF §6.3): "chismes" was assimilated as "tsismis", with the E closing to I.' },
-  toalla:      { latin: 'tuwalya',    note: 'Old loan (KWF §5.1): "toalla" is written "tuwalya" — the O weakened to U and takes the W glide.' },
-  baul:        { latin: 'baul',       note: 'KWF §5.5: "baúl" keeps its two vowel syllables (ba·ul) because the stress falls on the U — the AU → AW contraction only applies when the first vowel is stressed.' },
-  economia:    { latin: 'ekonomiya',  note: 'KWF §5.4: word-final stressed -ÍA keeps both vowels with a Y glide — "ekonomiya" names the discipline; the contracted "ekonomya" drifted to mean thriftiness.' },
-  filosofia:   { latin: 'pilosopiya', note: 'KWF §5.4: word-final stressed -ÍA keeps both vowels with a Y glide — "pilosopiya" names the discipline; "pilosopya" drifted to mean sophistry.' },
-  geografia:   { latin: 'heograpiya', note: 'KWF §5.4: word-final stressed -ÍA keeps both vowels with a Y glide ("heograpiya").' },
-  poesia:      { latin: 'poesiya',    note: 'KWF §5.5: "poesía" is written "poesiya" — the stressed final -ÍA keeps both vowels with a Y glide.' },
-};
+// Null prototype: looked up with raw user input, so a plain object literal
+// would answer "constructor"/"__proto__" with inherited members.
+const CURATED_FORMS: Record<string, { latin: string; note: string }> =
+  Object.assign(Object.create(null), {
+    caballo:     { latin: 'kabayo',     note: 'Old loan (KWF §4.3): "caballo" was assimilated as "kabayo" — the LL became Y in this early borrowing, unlike the later LL → LY pattern.' },
+    cebolla:     { latin: 'sibuyas',    note: 'Old loan (KWF §4.3): "cebolla(+s)" was assimilated as "sibuyas", with the plural S fused into the word.' },
+    cebollas:    { latin: 'sibuyas',    note: 'Old loan (KWF §4.3): "cebolla(+s)" was assimilated as "sibuyas", with the plural S fused into the word.' },
+    celaje:      { latin: 'silahis',    note: 'Old loan (KWF §4.3): "celaje(+s)" was assimilated as "silahis".' },
+    celajes:     { latin: 'silahis',    note: 'Old loan (KWF §4.3): "celaje(+s)" was assimilated as "silahis".' },
+    candela:     { latin: 'kandila',    note: 'Old loan (KWF §4.3): "candela" was assimilated as "kandila", with E shifting to I.' },
+    ventana:     { latin: 'bintana',    note: 'Old loan (KWF §4.2): "ventana" was assimilated as "bintanà", with E shifting to I.' },
+    confesar:    { latin: 'kumpisal',   note: 'Old loan (KWF §7.3): "confesar" was assimilated as "kumpisal" — CON- became KUM- before P, and the vowels shifted.' },
+    prejuicio:   { latin: 'perwisyo',   note: 'Old loan (KWF §5.3): "prejuicio" was assimilated as "perwisyo", with the weak H of the J sound vanishing entirely.' },
+    septiembre:  { latin: 'setyembre',  note: 'Old loan (KWF §5.4): "septiembre" is written "Setyembre" — the P before T is not sounded.' },
+    chineguelas: { latin: 'sinigwelas', note: 'Old loan (KWF §5): "chineguelas" was assimilated as "sinigwelas", with CH softening to S.' },
+    chismes:     { latin: 'tsismis',    note: 'Old loan (KWF §6.3): "chismes" was assimilated as "tsismis", with the E closing to I.' },
+    toalla:      { latin: 'tuwalya',    note: 'Old loan (KWF §5.1): "toalla" is written "tuwalya" — the O weakened to U and takes the W glide.' },
+    baul:        { latin: 'baul',       note: 'KWF §5.5: "baúl" keeps its two vowel syllables (ba·ul) because the stress falls on the U — the AU → AW contraction only applies when the first vowel is stressed.' },
+    economia:    { latin: 'ekonomiya',  note: 'KWF §5.4: word-final stressed -ÍA keeps both vowels with a Y glide — "ekonomiya" names the discipline; the contracted "ekonomya" drifted to mean thriftiness.' },
+    filosofia:   { latin: 'pilosopiya', note: 'KWF §5.4: word-final stressed -ÍA keeps both vowels with a Y glide — "pilosopiya" names the discipline; "pilosopya" drifted to mean sophistry.' },
+    geografia:   { latin: 'heograpiya', note: 'KWF §5.4: word-final stressed -ÍA keeps both vowels with a Y glide ("heograpiya").' },
+    poesia:      { latin: 'poesiya',    note: 'KWF §5.5: "poesía" is written "poesiya" — the stressed final -ÍA keeps both vowels with a Y glide.' },
+  });
 
 // ─── §4.12: Spanish H is silent — except in these families ───
 // humano and historia (and their derivatives) keep the H so they

@@ -34,8 +34,23 @@ async function startServer() {
   } else {
     // Production mode
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*all", (req, res) => {
+    app.use(
+      express.static(distPath, {
+        // Vite fingerprints everything under /assets, and cmudict-0.7a.txt is a
+        // frozen published corpus — a repeat visit should re-download none of
+        // it. index.html carries the fingerprints, so it must never be held.
+        maxAge: "1y",
+        immutable: true,
+        setHeaders(res, filePath) {
+          if (filePath.endsWith(".html")) {
+            res.setHeader("Cache-Control", "no-cache");
+          }
+        },
+      }),
+    );
+    // Express 4 routes through path-to-regexp 0.1, where "*all" matches only
+    // paths ending in "all" — the SPA fallback has to be a bare "*".
+    app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   }

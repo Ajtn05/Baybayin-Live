@@ -18,13 +18,18 @@ export const DANDA_DOUBLE = '\u1736';
 
 export const VOWELS = new Set(['a', 'e', 'i', 'o', 'u']);
 
-export const DICTIONARY: Record<string, { standard: string; meaning: string }> = {
-  'lalaki': { standard: 'lalaki', meaning: 'Man / Male (Correct traditional spelling pattern)' },
-  'babae': { standard: 'babae', meaning: 'Woman / Female (Correct traditional spelling pattern)' },
-  'totoo': { standard: 'totoo', meaning: 'True / Truth (Uses hiatus glides natively)' },
-  'puno': { standard: 'puno', meaning: 'Tree / Full' },
-  'punong': { standard: 'punong', meaning: 'Tree / Full (with linking nasal)' }
-};
+// Word lookups are keyed by raw user input, so these tables are given a
+// null prototype: a plain object literal would return Object.prototype
+// members for inputs like "constructor" or "__proto__" and crash the
+// pipeline downstream.
+export const DICTIONARY: Record<string, { standard: string; meaning: string }> =
+  Object.assign(Object.create(null), {
+    'lalaki': { standard: 'lalaki', meaning: 'Man / Male (Correct traditional spelling pattern)' },
+    'babae': { standard: 'babae', meaning: 'Woman / Female (Correct traditional spelling pattern)' },
+    'totoo': { standard: 'totoo', meaning: 'True / Truth (Uses hiatus glides natively)' },
+    'puno': { standard: 'puno', meaning: 'Tree / Full' },
+    'punong': { standard: 'punong', meaning: 'Tree / Full (with linking nasal)' },
+  });
 
 // Map of standard characters for the educational chart
 export const BAYBAYIN_CHART_DATA: BaybayinCharacter[] = [
@@ -58,15 +63,46 @@ export const BAYBAYIN_CHART_DATA: BaybayinCharacter[] = [
 ];
 
 export const PRESET_EXAMPLES = [
-  { latin: 'mabuhay', translation: 'ᜋᜊᜓᜑ᜔', meaning: 'Welcome / Long Live' },
-  { latin: 'salamat', translation: 'ᜐᜎᜋ᜔ᜆ᜔', meaning: 'Thank you' },
-  { latin: 'mag-aral', translation: 'ᜋᜄ᜔ᜁᜍᜎ᜔', meaning: 'To study (hyphen boundary test)' },
+  { latin: 'mabuhay', translation: 'ᜋᜊᜓᜑᜌ᜔', meaning: 'Welcome / Long Live' },
+  { latin: 'salamat', translation: 'ᜐᜎᜋᜆ᜔', meaning: 'Thank you' },
+  { latin: 'mag-aral', translation: 'ᜋᜄ᜔-ᜀᜍᜎ᜔', meaning: 'To study (hyphen boundary test)' },
   { latin: 'kwento', translation: 'ᜃᜓᜏᜒᜈ᜔ᜆᜓ', meaning: 'Story (consonant cluster test)' },
   { latin: 'banyo', translation: 'ᜊᜈ᜔ᜌᜓ', meaning: 'Bathroom (nasal cluster test)' },
   { latin: 'maria', translation: 'ᜋᜍᜒᜌ', meaning: 'Maria (vowel hiatus test)' },
-  { latin: 'kalayaan', translation: 'ᜃᜎᜌᜁᜈ᜔', meaning: 'Freedom' },
-  { latin: 'kaibigan', translation: 'ᜃᜁᜊᜒᜄ᜔', meaning: 'Friend' }
+  { latin: 'kalayaan', translation: 'ᜃᜎᜌᜀᜈ᜔', meaning: 'Freedom' },
+  { latin: 'kaibigan', translation: 'ᜃᜁᜊᜒᜄᜈ᜔', meaning: 'Friend' }
 ];
+
+// Abbreviated function words are written the way they are *said*: Baybayin
+// encodes sound, not spelling, so an abbreviation has to be restored to the
+// syllables it stands for before it can be rendered. These two are among the
+// most frequent words in Tagalog, and both are abbreviations — "ng" is a
+// contraction of "nang", and "mga" of "manga".
+const ABBREVIATED_WORDS: Record<string, { full: string; note: string }> =
+  Object.assign(Object.create(null), {
+    ng: {
+      full: 'nang',
+      note: 'Abbreviation spelled out: the marker "ng" is pronounced /naŋ/ ("nang"), so it is written ᜈᜅ᜔ — not the single character ᜅ, which reads "nga".',
+    },
+    mga: {
+      full: 'manga',
+      note: 'Abbreviation spelled out: the plural marker "mga" is pronounced /ma·ŋa/ ("manga"), so it is written ᜋᜅ — Baybayin has no way to write the silent letters of an abbreviation.',
+    },
+  });
+
+/**
+ * Replace abbreviated function words with the pronunciation they stand for.
+ * Matches whole alphabetic runs only, so "ngayon" and "mag-aral" are left
+ * alone while "ng," and "mga." keep their punctuation.
+ */
+function expandAbbreviations(word: string, notes: Set<string>): string {
+  return word.replace(/[a-z]+/g, run => {
+    const entry = ABBREVIATED_WORDS[run];
+    if (!entry) return run;
+    notes.add(entry.note);
+    return entry.full;
+  });
+}
 
 function preprocessLoanLetters(word: string, notes: Set<string>): string {
   let w = word;
@@ -150,6 +186,10 @@ export const VALID_CLUSTERS = [
   'ts', 'pr', 'pl', 'br', 'bl', 'tr', 'dr', 'kr', 'kl', 'gr', 'gl', 'sy', 'dy', 'ny', 'ky', 'py', 'by', 'my', 'ty', 'ly', 'wy',
   'sw', 'kw', 'pw', 'gw', 'lw', 'hw'
 ];
+
+// Membership set for the syllable splitter, which asks this question once per
+// consonant pair in every word on every keystroke.
+const VALID_CLUSTER_SET = new Set(VALID_CLUSTERS);
 
 interface WordUnit {
   type: 'vowel' | 'consonant' | 'separator' | 'other';
@@ -248,7 +288,7 @@ function getSplitIndex(betweenConsonants: WordUnit[]): number {
   if (k === 2) {
     const c1 = betweenConsonants[0].char.toLowerCase();
     const c2 = betweenConsonants[1].char.toLowerCase();
-    if (VALID_CLUSTERS.includes(c1 + c2)) {
+    if (VALID_CLUSTER_SET.has(c1 + c2)) {
       return 0;
     } else {
       return 1;
@@ -258,7 +298,7 @@ function getSplitIndex(betweenConsonants: WordUnit[]): number {
   if (k === 3) {
     const c2 = betweenConsonants[1].char.toLowerCase();
     const c3 = betweenConsonants[2].char.toLowerCase();
-    if (VALID_CLUSTERS.includes(c2 + c3)) {
+    if (VALID_CLUSTER_SET.has(c2 + c3)) {
       return 1;
     } else {
       return 2;
@@ -268,7 +308,7 @@ function getSplitIndex(betweenConsonants: WordUnit[]): number {
   // k >= 4
   const ck_1 = betweenConsonants[k - 2].char.toLowerCase();
   const ck = betweenConsonants[k - 1].char.toLowerCase();
-  if (VALID_CLUSTERS.includes(ck_1 + ck)) {
+  if (VALID_CLUSTER_SET.has(ck_1 + ck)) {
     return k - 2;
   } else {
     return k - 1;
@@ -473,11 +513,14 @@ export function translateLatinToBaybayin(text: string, options: Partial<Translat
     // Check custom static dictionary normalization for common Tagalog grammatical alignments
     if (o.useDictionary && DICTIONARY[word]) {
       const dictMatch = DICTIONARY[word];
+      if (dictMatch.standard !== word) {
+        notes.add(`Dictionary correction: Aligned "${tok}" with orthographic standard (Standardized: ${dictMatch.standard})`);
+      }
       word = dictMatch.standard;
-      notes.add(`Dictionary correction: Aligned "${tok}" with orthographic standard (Standardized: ${word})`);
     }
 
     // Preprocess character mapping & Glides step-by-step
+    word = expandAbbreviations(word, notes);
     word = preprocessLoanLetters(word, notes);
     word = preprocessVowelGlides(word, notes);
 
@@ -541,6 +584,7 @@ export function analyzeWordGlyphs(rawWord: string, options: Partial<TranslationO
     word = dictMatch.standard;
   }
 
+  word = expandAbbreviations(word, preprocessNotes);
   word = preprocessLoanLetters(word, preprocessNotes);
   word = preprocessVowelGlides(word, preprocessNotes);
 

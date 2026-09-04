@@ -2,6 +2,7 @@
 
 Baybayin Live deterministically converts Latin text into Baybayin script using known language rules and present-day Filipino practices. Users can type Filipino, English, and Spanish words from the same input box. Upon conversion, it lists every rule it applies, word by word, allowing users to see how words are converted, and learn more about Baybayin and its rules.
 
+<img width="1692" height="1059" alt="Screenshot 2026-09-04 at 15 36 15" src="https://github.com/user-attachments/assets/8e746baf-ce16-4d6b-83c8-c84d396f6dbb" />
 
 ## What it does
 

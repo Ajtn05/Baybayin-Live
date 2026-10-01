@@ -14,39 +14,6 @@ The app detects the language of each word. It then sends the word through one of
 
 All three pipelines end in the same syllabifier and the same glyph renderer. Mixed Taglish text needs no language switch.
 
-## Requirements
-
-- Node.js 20 or later
-- npm
-
-## Install and run
-
-```bash
-npm install
-npm run dev
-```
-
-Open `http://localhost:3000`. The dev server is Express with Vite in middleware mode.
-
-To build and run the production bundle:
-
-```bash
-npm run build
-npm start
-```
-
-`npm run build` writes the client to `dist/` and bundles the server to `dist/server.cjs`. Set the `PORT` variable to change the port. The server binds to `127.0.0.1`.
-
-## Other commands
-
-| Command | Action |
-|---|---|
-| `npm run lint` | Type-check with `tsc --noEmit`. The command writes no files. |
-| `npm run clean` | Delete `dist/` and `server.js`. |
-| `npx tsx scripts/kwf-check.ts` | Run the KWF adherence checks. Each case prints PASS or FAIL. |
-
-`scripts/kwf-check.ts` covers all three pipelines and the language detector. Run it after any change to a respelling rule.
-
 ## Language detection
 
 Every word runs through five ordered checks. The first check that matches decides the language. The word card in the UI names the check that fired.
